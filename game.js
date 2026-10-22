@@ -19,7 +19,7 @@ const TAU = Math.PI * 2;
 let gameTime = 0, nextRegenAt = Infinity, damageFlashUntil = 0, messageUntil = 0;
 // E01 排程、E02 水平加減速、E03 跳高、E04 徑向致盲。
 const effectKinds = Object.freeze(['blindness','speed','slowness','jumpBoost']);
-const effectState = {type:null, endsAt:0, nextAt:Infinity};
+const effectState = {type:null, endsAt:0, nextAt:Infinity,armed:false,firstPending:true};
 let photoDirectory=null,photoCaptureBusy=false,photoSequence=0;
 let audioContext=null,audioMuted=false,footstepDistance=0,lastDigSoundAt=-Infinity;
 let lastSafe = {x:16.5, y:14, z:23.5};
@@ -225,21 +225,23 @@ function collides(x,y,z,h) {
 const SAVE_KEY='sky-island-worlds-v1';
 let saveSequence=0;
 function captureWorld() {
-  return {schema:'sky-island',version:1,size:N,blocks:Array.from(world),bag:Array.from(inventory),
+  return {schema:'sky-island',version:2,size:N,blocks:Array.from(world),bag:Array.from(inventory),
     player:{...player},view:photoState.enabled?{...photoState.originalView}:{yaw,pitch},time:gameTime,regenAt:Number.isFinite(nextRegenAt)?nextRegenAt:null,
-    effect:{...effectState},drops:drops.map(d=>({...d})),lastSafe:{...lastSafe},selected};
+    effect:{...effectState,nextAt:Number.isFinite(effectState.nextAt)?effectState.nextAt:null},drops:drops.map(d=>({...d})),lastSafe:{...lastSafe},selected};
 }
 function validateWorld(data) {
   const finite=(n,min,max)=>Number.isFinite(n)&&n>=min&&n<=max;
   const integer=(n,min,max)=>Number.isInteger(n)&&finite(n,min,max);
   const point=p=>p&&finite(p.x,-128,128)&&finite(p.y,-16,128)&&finite(p.z,-128,128);
-  if(!data||data.schema!=='sky-island'||data.version!==1||data.size!==N)throw Error('不支援的世界格式或版本');
+  if(!data||data.schema!=='sky-island'||![1,2].includes(data.version)||data.size!==N)throw Error('不支援的世界格式或版本');
   if(!Array.isArray(data.blocks)||data.blocks.length!==N*N*N||!data.blocks.every(n=>integer(n,0,8)))throw Error('方塊資料不正確');
   if(!Array.isArray(data.bag)||data.bag.length!==9||!data.bag.every(n=>integer(n,0,1000000000)))throw Error('物品欄資料不正確');
   if(!point(data.player)||!integer(data.player.health,1,10)||!finite(data.player.vy,-10000,10000)||!finite(data.player.peakY,-16,128)||typeof data.player.ground!=='boolean'||typeof data.player.crouched!=='boolean')throw Error('玩家資料不正確');
   if(!data.view||!finite(data.view.yaw,-Math.PI,Math.PI)||!finite(data.view.pitch,-1.55,1.55)||!finite(data.time,0,1e9)||!integer(data.selected,0,8)||!point(data.lastSafe))throw Error('視角或時間不正確');
   if(data.regenAt!==null&&!finite(data.regenAt,0,1e9))throw Error('回血時間不正確');
-  if(!data.effect||!(data.effect.type===null||effectKinds.includes(data.effect.type))||!finite(data.effect.endsAt,0,1e9)||!finite(data.effect.nextAt,0,1e9))throw Error('效果資料不正確');
+  if(!data.effect||!(data.effect.type===null||effectKinds.includes(data.effect.type))||!finite(data.effect.endsAt,0,1e9)||!(finite(data.effect.nextAt,0,1e9)||(data.version===2&&data.effect.nextAt===null)))throw Error('效果資料不正確');
+  if(data.version===2&&(typeof data.effect.armed!=='boolean'||typeof data.effect.firstPending!=='boolean'))throw Error('首次效果資料不正確');
+  const effect=data.version===1?{type:data.effect.type,endsAt:data.effect.type?data.time+60:0,nextAt:data.time+70,armed:true,firstPending:false}:{type:data.effect.type,endsAt:data.effect.endsAt,nextAt:data.effect.nextAt,armed:data.effect.armed,firstPending:data.effect.firstPending};
   if(!Array.isArray(data.drops)||data.drops.length>32768||!data.drops.every(d=>point(d)&&integer(d.type,1,8)&&integer(d.count,1,1e9)&&finite(d.vy,-10000,10000)&&finite(d.phase,0,100)&&finite(d.pickupAt,0,1e9)))throw Error('掉落物資料不正確');
   const h=data.player.crouched?1.45:1.8;
   for(let x=Math.floor(data.player.x-.28);x<=Math.floor(data.player.x+.28);x++)
@@ -247,10 +249,10 @@ function validateWorld(data) {
       for(let z=Math.floor(data.player.z-.28);z<=Math.floor(data.player.z+.28);z++)
         if(inside(x,y,z)&&data.blocks[at(x,y,z)])throw Error('玩家位置位於實心方塊內');
   const copyPoint=p=>({x:p.x,y:p.y,z:p.z});
-  return {schema:'sky-island',version:1,size:N,blocks:data.blocks.slice(),bag:data.bag.slice(),
+  return {schema:'sky-island',version:2,size:N,blocks:data.blocks.slice(),bag:data.bag.slice(),
     player:{...copyPoint(data.player),health:data.player.health,vy:data.player.vy,peakY:data.player.peakY,ground:data.player.ground,crouched:data.player.crouched},
     view:{yaw:data.view.yaw,pitch:data.view.pitch},time:data.time,regenAt:data.regenAt,selected:data.selected,lastSafe:copyPoint(data.lastSafe),
-    effect:{type:data.effect.type,endsAt:data.effect.endsAt,nextAt:data.effect.nextAt},
+    effect,
     drops:data.drops.map(d=>({...copyPoint(d),type:d.type,count:d.count,vy:d.vy,phase:d.phase,pickupAt:d.pickupAt}))};
 }
 function restoreWorld(input) {
@@ -258,7 +260,7 @@ function restoreWorld(input) {
   if(photoState.enabled)togglePhotoMode();
   pause();world.set(data.blocks);inventory.set(data.bag);Object.assign(player,data.player);
   yaw=data.view.yaw;pitch=data.view.pitch;gameTime=data.time;nextRegenAt=data.regenAt===null?Infinity:data.regenAt;
-  Object.assign(effectState,data.effect);lastSafe={...data.lastSafe};selected=data.selected;
+  Object.assign(effectState,data.effect);effectState.nextAt=data.effect.nextAt===null?Infinity:data.effect.nextAt;lastSafe={...data.lastSafe};selected=data.selected;
   clearDrops();data.drops.forEach(d=>drops.push({...d}));renderDrops();rebuild();resetDig();
   damageFlashUntil=0;messageUntil=0;$('#notice').textContent='';applyEffectVision();updateEffectLabel();updateInventory();updateHealth();updateCamera();
 }
@@ -306,26 +308,20 @@ function playBlockSound(type,action) {
   }catch{return false;}
 }
 function resetEffects() {
-  effectState.type=null;
-  effectState.endsAt=0;
-  effectState.nextAt=gameTime+30+Math.random()*30;
-  applyEffectVision();
-  updateEffectLabel();
+  Object.assign(effectState,{type:null,endsAt:0,nextAt:Infinity,armed:false,firstPending:true});
+  applyEffectVision();updateEffectLabel();
 }
+function armFirstEffect(){if(!effectState.armed){effectState.armed=true;effectState.nextAt=gameTime+10;}}
+function chooseEffect(random=Math.random()){return random<.4?'blindness':random<.6?'speed':random<.8?'slowness':'jumpBoost';}
 function updateEffects() {
-  if(!active()||!ready) return;
-  if(effectState.type!==null&&gameTime>=effectState.endsAt) {
-    effectState.type=null;
-    effectState.endsAt=0;
+  if(!active()||!ready)return;
+  if(effectState.type!==null&&gameTime>=effectState.endsAt){effectState.type=null;effectState.endsAt=0;}
+  if(effectState.armed&&gameTime>=effectState.nextAt){
+    effectState.type=effectState.firstPending?'blindness':chooseEffect();
+    effectState.firstPending=false;effectState.endsAt=gameTime+60;
+    effectState.nextAt=gameTime+70+Math.random()*30;
   }
-  if(gameTime>=effectState.nextAt) {
-    effectState.type=effectKinds[Math.floor(Math.random()*effectKinds.length)];
-    effectState.endsAt=gameTime+20;
-    // 下次間隔從本次實際觸發計算，避免延遲追趕造成重疊。
-    effectState.nextAt=gameTime+30+Math.random()*30;
-  }
-  applyEffectVision();
-  updateEffectLabel();
+  applyEffectVision();updateEffectLabel();
 }
 function generate() {
   if(photoState.enabled)togglePhotoMode();
@@ -526,6 +522,7 @@ function updateMining(dt) {
     $('#target').textContent=names[type]+' · 挖掘 '+Math.min(100,Math.floor(dig/duration*100))+'%';
     if(dig+1e-9>=duration) {
       set(hit.x,hit.y,hit.z,0);
+      armFirstEffect();
       spawnDrop(type,1,hit.x+.5,hit.y+.2,hit.z+.5);
       rebuild(); dig=0; digKey=''; crack.visible=false;
     }
