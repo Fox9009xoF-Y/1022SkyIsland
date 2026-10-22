@@ -17,6 +17,9 @@ let ready = false, loadFailed = false, playing = false, wasLocked = false;
 let lookPointer = null;
 const TAU = Math.PI * 2;
 let gameTime = 0, nextRegenAt = Infinity, damageFlashUntil = 0, messageUntil = 0;
+// E01 只建立排程狀態；四種效果的實際作用由後續步驟分別實作。
+const effectKinds = Object.freeze(['blindness','speed','slowness','jumpBoost']);
+const effectState = {type:null, endsAt:0, nextAt:Infinity};
 let lastSafe = {x:16.5, y:14, z:23.5};
 const at = (x,y,z) => x + N * (z + N*y);
 const inside = (x,y,z) => x>=0 && z>=0 && y>=0 && x<N && z<N && y<N;
@@ -177,8 +180,27 @@ function collides(x,y,z,h) {
       for(let c=Math.floor(z-.28);c<=Math.floor(z+.28);c++) if(get(a,b,c)) return true;
   return false;
 }
+function resetEffects() {
+  effectState.type=null;
+  effectState.endsAt=0;
+  effectState.nextAt=gameTime+30+Math.random()*30;
+}
+function updateEffects() {
+  if(!active()||!ready) return;
+  if(effectState.type!==null&&gameTime>=effectState.endsAt) {
+    effectState.type=null;
+    effectState.endsAt=0;
+  }
+  if(gameTime>=effectState.nextAt) {
+    effectState.type=effectKinds[Math.floor(Math.random()*effectKinds.length)];
+    effectState.endsAt=gameTime+20;
+    // 下次間隔從本次實際觸發計算，避免延遲追趕造成重疊。
+    effectState.nextAt=gameTime+30+Math.random()*30;
+  }
+}
 function generate() {
   world.fill(0); clearDrops(); inventory.fill(0); gameTime=0; nextRegenAt=Infinity;
+  resetEffects();
   player.health=10; player.crouched=false;
   const phase=Math.random()*100;
   for(let z=2;z<30;z++) for(let x=2;x<30;x++) {
@@ -440,6 +462,7 @@ function frame(now) {
   if(active()&&ready) {
     updateLook(dt);
     updateHealthClock(dt);
+    updateEffects();
     for(let t=0;t<6;t++) move(dt/6);
     updateMining(dt); updateDrops(dt);
   } else { outline.visible=crack.visible=false; $('#target').textContent=''; }

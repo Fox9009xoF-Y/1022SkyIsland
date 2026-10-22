@@ -41,3 +41,8 @@
 check.cjs 使用真實 three.js 幾何與模擬的 DOM / 繪圖器進行邏輯測試，不代表實際瀏覽器操作或 WebGL 畫面已驗證。建構與回歸順序見 PLANS.md；完整驗收標準見 VERIFY.md；本次逐項結果見 VERIFICATION.md；架構與流程圖見 MERMAID.md。後段修正後，必須從 P01 起重驗先前所有步驟，最終完整驗收 V01～V37。
 
 asset-data.js 僅內嵌素材包的原始 16px PNG，經逐位元組比對相同。sky-island-assets 原圖保留不變。素材 © 2026 JUNHAO CHEN，CC BY-NC-SA 4.0，使用範圍見素材包 README.txt。three.js 0.160.1 及其 MIT 授權保留於 vendor。
+
+
+## 隨機效果開發進度
+
+依新增 BRIEF 分步實作，目前只完成 E01 排程狀態：每 30～60 秒抽一種狀態、維持 20 秒，暫停不推進，新世界重抽。致盲畫面、加速/減速與跳躍提升尚未套用；請勿將此版視為四種效果都已可玩。後續依 PLANS.md 的 E02～E04 各自執行 TDD，完成一步就停下回報。
