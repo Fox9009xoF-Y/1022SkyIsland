@@ -245,3 +245,29 @@ vm.runInContext(`{
  }finally{Math.random=savedRandom;playing=false;resetEffects();}
 }`,context);
 console.log('通過 E02：步行/蹲行/奔跑/橫移/斜移倍率、無累乘、到期與新世界還原、排程 frame 與暫停。');
+
+// E03：以最高腳底實測增加三格，允許現有離散物理在不同子步下的誤差。
+vm.runInContext(`{
+ function jumpPeak(type,dt){
+  flat();effectState.type=type;effectState.endsAt=20;effectState.nextAt=Infinity;
+  const bottom=player.y;let highest=bottom;keys.add('Space');move(dt);keys.clear();highest=Math.max(highest,player.y);
+  for(let i=0;i<3000&&!player.ground;i++){move(dt);highest=Math.max(highest,player.y);}
+  expect(player.ground,'E03 jump lands');return highest-bottom;
+ }
+ for(const dt of [1/180,1/360,1/600]){
+  const base=jumpPeak(null,dt),boost=jumpPeak('jumpBoost',dt);
+  expect(Math.abs(boost-base-3)<.035,'E03 three block height dt '+dt);
+  for(const type of ['speed','slowness','blindness'])expect(Math.abs(jumpPeak(type,dt)-base)<1e-9,'E03 other effect jump unchanged');
+ }
+ flat();effectState.type='jumpBoost';effectState.endsAt=20;effectState.nextAt=60;playing=true;ready=true;gameTime=20;updateEffects();
+ keys.add('Space');move(1/360);expect(Math.abs(player.vy-(7-20/360))<1e-9,'E03 expired normal launch');
+ flat();effectState.type='jumpBoost';keys.add('Space');keys.add('ControlLeft');move(1/360);expect(player.ground,'E03 crouch still prevents jump');
+ flat();effectState.type='jumpBoost';keys.add('Space');player.ground=false;player.vy=0;move(1/360);expect(player.vy<0,'E03 no air jump');
+ const savedRandom=Math.random;
+ try{
+  Math.random=()=>0;flat();gameTime=0;resetEffects();Math.random=()=>.75;gameTime=29.95;playing=true;ready=true;keys.add('Space');last=0;frame(100);
+  expect(effectState.type==='jumpBoost'&&player.vy>10,'E03 scheduled boost in same frame');
+  pause();const y=player.y;frame(200);expect(player.y===y,'E03 pause vertical motion');
+ }finally{Math.random=savedRandom;playing=false;resetEffects();}
+}`,context);
+console.log('通過 E03：三種物理子步的最高腳底增加三格、非跳躍效果不變、到期還原、防空跳/蹲跳及 frame 整合。');

@@ -113,7 +113,8 @@ flowchart TD
   six --> input["讀 keys，決定蹲姿、步行或奔跑速度"]
   input --> multiplier["E02：speed 乘 1.5、slowness 乘 0.5、其餘乘 1；不改基礎速度"]
   multiplier --> horizontal["依 yaw 移動，檢查碰撞與蹲姿邊緣保護"]
-  horizontal --> vertical["地面起跳、重力、小段垂直位移與碰撞"]
+  horizontal --> launch["E03：jumpBoost 起跳初速 13，正常 7；高度差由重力公式計算"]
+  launch --> vertical["僅地面且非蹲姿可跳，重力、小段垂直位移與碰撞"]
   vertical --> land{"落地或墜入虛空？"}
   land -->|落地| damage["更新 lastSafe、按 peakY 落差計算 damage"]
   land -->|虛空| death["die true：最後落腳處散落及復活"]
@@ -268,3 +269,8 @@ P01～P11 是依賴順序；旁邊的「每步修改完成」子流程適用於�
 
 
 E02 本輪結果：紅燈提交 b37482d 後接入移動倍率，全部 G01～G14/E01/E02 通過；八張圖的數量及原有驗收範圍保留。最新進度為 E01/E02 完成，E03/E04 未完成。上方 E01 變更紀錄描述該步當時範圍，不能當作目前仍無加減速的宣告。
+
+
+### E03 跳高作用（本輪 TDD）
+
+在原 move 起跳條件內選速度：jumpBoost 使用 sqrt(7²+2×20×3)，其餘使用 7；不變更空跳、蹲跳、重力與碰撞條件。以多種子步的最高腳底高度驗收三格差及到期還原。E02 全綠後依最新授權直接接續本步，但仍先紅燈提交，再實作及所有前段回歸。
