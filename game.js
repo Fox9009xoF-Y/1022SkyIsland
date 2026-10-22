@@ -17,7 +17,7 @@ let ready = false, loadFailed = false, playing = false, wasLocked = false;
 let lookPointer = null;
 const TAU = Math.PI * 2;
 let gameTime = 0, nextRegenAt = Infinity, damageFlashUntil = 0, messageUntil = 0;
-// E01 排程、E02 水平加減速、E03 跳高；致盲由 E04 接入。
+// E01 排程、E02 水平加減速、E03 跳高、E04 徑向致盲。
 const effectKinds = Object.freeze(['blindness','speed','slowness','jumpBoost']);
 const effectState = {type:null, endsAt:0, nextAt:Infinity};
 let lastSafe = {x:16.5, y:14, z:23.5};
@@ -28,6 +28,29 @@ const set = (x,y,z,v) => { if (inside(x,y,z)) world[at(x,y,z)] = v; };
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#bfe0f4');
 scene.fog = new THREE.Fog('#bfe0f4', 30, 65);
+const blindnessUniform = {value:0};
+function installBlindnessFog(material) {
+  material.onBeforeCompile = shader => {
+    shader.uniforms.blindnessActive=blindnessUniform;
+    shader.vertexShader=shader.vertexShader
+      .replace('#include <fog_pars_vertex>', '#include <fog_pars_vertex>\n#ifdef USE_FOG\nvarying vec3 vRadialFogPosition;\n#endif')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\n#ifdef USE_FOG\nvRadialFogPosition = mvPosition.xyz;\n#endif');
+    const fogFragment=THREE.ShaderChunk.fog_fragment.replaceAll('vFogDepth','fogDistance')
+      .replace('#ifdef USE_FOG','#ifdef USE_FOG\nfloat fogDistance = mix( vFogDepth, length(vRadialFogPosition), blindnessActive );');
+    shader.fragmentShader=shader.fragmentShader
+      .replace('#include <fog_pars_fragment>', '#include <fog_pars_fragment>\n#ifdef USE_FOG\nvarying vec3 vRadialFogPosition;\nuniform float blindnessActive;\n#endif')
+      .replace('#include <fog_fragment>',fogFragment);
+  };
+  material.customProgramCacheKey=()=> 'sky-island-radial-fog-v1';
+}
+function applyEffectVision() {
+  const blind=effectState.type==='blindness';
+  blindnessUniform.value=blind?1:0;
+  scene.background.set(blind?0:0xbfe0f4);
+  scene.fog.color.set(blind?0:0xbfe0f4);
+  scene.fog.near=blind?0:30;
+  scene.fog.far=blind?3:65;
+}
 const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, .05, 90);
 camera.rotation.order = 'YXZ';
 let renderer;
@@ -76,6 +99,9 @@ const crack = new THREE.Mesh(new THREE.BoxGeometry(1.006,1.006,1.006),cracks[0])
 crack.visible = false; scene.add(crack);
 const outline = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1.008,1.008,1.008)),new THREE.LineBasicMaterial({color:0x233a30}));
 outline.visible = false; scene.add(outline);
+materials.forEach(installBlindnessFog);
+cracks.forEach(installBlindnessFog);
+installBlindnessFog(outline.material);
 const faces = [
   {n:[1,0,0],v:[[1,0,1],[1,0,0],[1,1,0],[1,1,1]],shade:.77},
   {n:[-1,0,0],v:[[0,0,0],[0,0,1],[0,1,1],[0,1,0]],shade:.68},
@@ -117,7 +143,7 @@ function rebuild() {
 const dropGeometry = new THREE.BoxGeometry(.28,.28,.28), dropBatches = [];
 for (let type=1;type<=8;type++) {
   const mats=faces.map((_,face)=>materials[tile(type,face)].clone());
-  mats.forEach(m=>{m.vertexColors=false;});
+  mats.forEach(m=>{m.vertexColors=false;installBlindnessFog(m);});
   const mesh = new THREE.InstancedMesh(dropGeometry,mats,32);
   mesh.count=0; mesh.frustumCulled=false; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   scene.add(mesh); dropBatches[type]=mesh;
@@ -184,6 +210,7 @@ function resetEffects() {
   effectState.type=null;
   effectState.endsAt=0;
   effectState.nextAt=gameTime+30+Math.random()*30;
+  applyEffectVision();
 }
 function updateEffects() {
   if(!active()||!ready) return;
@@ -197,6 +224,7 @@ function updateEffects() {
     // 下次間隔從本次實際觸發計算，避免延遲追趕造成重疊。
     effectState.nextAt=gameTime+30+Math.random()*30;
   }
+  applyEffectVision();
 }
 function generate() {
   world.fill(0); clearDrops(); inventory.fill(0); gameTime=0; nextRegenAt=Infinity;

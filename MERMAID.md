@@ -1,5 +1,7 @@
 # MERMAID.md：浮島工坊程式、功能與流程
 
+目前 E01～E04 四種隨機效果均已接入並通過自動測試；後文各步變更紀錄為歷史進度，不代表目前仍待實作。GPU 實際編譯、畫面及效能尚未驗證。
+
 圖中名稱對應目前 game.js。實作順序見 PLANS.md，驗收標準見 VERIFY.md，實際結果見 VERIFICATION.md。這些圖描述現有設計，不表示功能已經實機通過。沒有後端、多人、帳號或存檔服務。
 
 ## 1. 檔案與模組架構
@@ -99,7 +101,7 @@ flowchart TD
   active -->|否| hide["隱藏瞄準方塊及裂痕，不推進遊戲時間"]
   active -->|是| look["updateLook dt：相容邊緣轉向"]
   look --> clock["updateHealthClock dt：gameTime、回血、提示與傷害遮罩"]
-  clock --> effects["E01 排程：updateEffects；E02 加減速已接入，E03/E04 待實作"]
+  clock --> effects["E01 排程 updateEffects，E04 同步視野；E02/E03 由 move 套用"]
   effects --> enabled{"playing 且 ready？"}
   enabled -->|否| effectKeep["不改效果狀態"]
   enabled -->|是| expired{"當前效果到達 endsAt？"}
@@ -282,3 +284,6 @@ E03 最新結果：經使用者授權只修正空中測試起點 y=5，原斷言
 ### E04 徑向致盲作用（本輪 TDD）
 
 updateEffects/resetEffects 同步 applyEffectVision，切換共用 blindnessUniform 與原場景背景/霧值。材質 onBeforeCompile 在 vertex 傳出 mvPosition.xyz，再在 fragment 取 length，致盲時才切換徑向距離；正常模式維持原 z 深度。smoothstep 從 0 到 3 格混向黑色，三格外全黑。地形、裂痕、outline 及 drop clone 都接同一 uniform，避免漏光或反覆編譯。程式契約可自動測試，最終 WebGL 畫面仍須實機觀察。
+
+
+E04 最新結果：紅燈提交 57cbfb1 後完成 shader/狀態整合，G01～G14/E01～E04 全部通過，未再修改紅燈測試。八張主架構圖均保留；目前程式流程為排程→視野切換→水平倍率/起跳初速→原物理與互動。恢復/新世界流程都回復正常霧與倍率；視覺結果仍需實機驗收。
