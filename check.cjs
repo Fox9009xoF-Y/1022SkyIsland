@@ -262,7 +262,7 @@ vm.runInContext(`{
  flat();effectState.type='jumpBoost';effectState.endsAt=20;effectState.nextAt=60;playing=true;ready=true;gameTime=20;updateEffects();
  keys.add('Space');move(1/360);expect(Math.abs(player.vy-(7-20/360))<1e-9,'E03 expired normal launch');
  flat();effectState.type='jumpBoost';keys.add('Space');keys.add('ControlLeft');move(1/360);expect(player.ground,'E03 crouch still prevents jump');
- flat();effectState.type='jumpBoost';keys.add('Space');player.ground=false;player.vy=0;move(1/360);expect(player.vy<0,'E03 no air jump');
+ flat();effectState.type='jumpBoost';keys.add('Space');player.y=5;player.ground=false;player.vy=0;move(1/360);expect(player.vy<0,'E03 no air jump');
  const savedRandom=Math.random;
  try{
   Math.random=()=>0;flat();gameTime=0;resetEffects();Math.random=()=>.75;gameTime=29.95;playing=true;ready=true;keys.add('Space');last=0;frame(100);
