@@ -190,8 +190,8 @@ function monsterNavigation(){
 function spawnMonsters(){
   resetMonsters();const nav=monsterNavigation(),all=[],far=[];
   for(let i=0;i<N*N;i++)if(nav.distance[i]>=0){all.push(i);if(nav.distance[i]>=4&&nav.distance[i]<=12)far.push(i);}
-  const candidates=far.length?far:all;
-  for(let id=1;id<=5;id++){const index=candidates.length?candidates.splice(Math.floor(Math.random()*candidates.length),1)[0]:all[0];monsters.push({id,x:index===undefined?0:index%N+.5,y:index===undefined?0:nav.heights[index],z:index===undefined?0:Math.floor(index/N)+.5,placed:index!==undefined,nextAttackAt:gameTime,goal:null});}
+  const candidates=far.length?far.slice():all.slice();
+  for(let id=1;id<=5;id++){const index=candidates.length?candidates.splice(Math.floor(Math.random()*candidates.length),1)[0]:all[0];monsters.push({id,x:index===undefined?0:index%N+.5,y:index===undefined?0:nav.heights[index],z:index===undefined?0:Math.floor(index/N)+.5,placed:index!==undefined,nextAttackAt:gameTime,vy:0,goal:null});}
   renderMonsters();
 }
 function syncMonsterLifecycle(previousType,previousEnd){
@@ -199,7 +199,7 @@ function syncMonsterLifecycle(previousType,previousEnd){
   else if(monstersWereBlind||previousType==='blindness'){monstersWereBlind=false;monstersDespawnAt=previousEnd+10;}
   if(monstersDespawnAt&&gameTime>=monstersDespawnAt)resetMonsters();
 }
-function monsterSupported(x,y,z){for(let a=Math.floor(x-.28);a<=Math.floor(x+.28);a++)for(let c=Math.floor(z-.28);c<=Math.floor(z+.28);c++)if(get(a,Math.floor(y-.05),c))return true;return false;}
+function monsterSupported(x,y,z){for(let a=Math.floor(x-.45);a<=Math.floor(x+.45);a++)for(let c=Math.floor(z-.45);c<=Math.floor(z+.45);c++)if(get(a,Math.floor(y-.05),c))return true;return false;}
 function monsterGoal(m,nav){
   const x=Math.floor(m.x),z=Math.floor(m.z),i=x+N*z;if(x<0||x>=N||z<0||z>=N||nav.distance[i]<0)return null;
   if(Math.abs(m.x-x-.5)>.001||Math.abs(m.z-z-.5)>.001)return {x:x+.5,z:z+.5,index:i,revision:worldRevision};
@@ -211,15 +211,24 @@ function updateMonsters(dt){
   if(!active()||!ready||photoState.enabled)return;
   if(monstersDespawnAt&&gameTime>=monstersDespawnAt){resetMonsters();return;}
   if(!monsters.length)return;const nav=monsterNavigation();
+  const available=[];for(let i=0;i<N*N;i++)if(nav.distance[i]>=0)available.push(i);
+  for(const m of monsters)if(!m.placed&&available.length){const i=available[(m.id-1)%available.length];Object.assign(m,{x:i%N+.5,y:nav.heights[i],z:Math.floor(i/N)+.5,placed:true,vy:0,goal:null});}
   const life=playerLife;
-  for(const m of monsters){if(!m.placed)continue;let budget=MONSTER_SPEED*dt,iterations=0;
+  for(const m of monsters){if(!m.placed)continue;
+    if(!monsterSupported(m.x,m.y,m.z)||(m.vy||0)<0){
+      m.vy=(m.vy||0)-20*dt;const fall=m.vy*dt,steps=Math.max(1,Math.ceil(Math.abs(fall)/.06));
+      for(let i=0;i<steps;i++){const next=m.y+fall/steps;if(collides(m.x,next,m.z,2,.45)){m.y=Math.ceil(next);m.vy=0;break;}m.y=next;}
+      if(m.y< -8){m.placed=false;m.vy=0;continue;}
+      if(!monsterSupported(m.x,m.y,m.z))continue;
+    }else m.vy=0;
+    let budget=MONSTER_SPEED*dt,iterations=0;
     while(budget>1e-8&&iterations++<100){
       if(Math.hypot(m.x-player.x,m.z-player.z)<=1.2)break;
       if(m.goal&&(m.goal.revision!==worldRevision||nav.distance[m.goal.index]<0))m.goal=null;
       if(!m.goal)m.goal=monsterGoal(m,nav);if(!m.goal)break;
       const dx=m.goal.x-m.x,dz=m.goal.z-m.z,d=Math.hypot(dx,dz);if(d<1e-8){m.goal=null;continue;}
       const step=Math.min(.06,budget,d),x=m.x+dx/d*step,z=m.z+dz/d*step;
-      let nextY=null;for(const y of [m.y,m.y+1,m.y-1])if(!collides(x,y,z,2)&&monsterSupported(x,y,z)){nextY=y;break;}
+      let nextY=null;for(const y of [m.y,m.y+1,m.y-1])if(!collides(x,y,z,2,.45)&&monsterSupported(x,y,z)){nextY=y;break;}
       if(nextY===null){m.goal=null;break;}m.x=x;m.y=nextY;m.z=z;budget-=step;if(step>=d-1e-8)m.goal=null;
     }
     receiveMonsterHit(m);if(playerLife!==life)break;
@@ -278,10 +287,10 @@ function updateDrops(dt) {
   if (changed) updateInventory();
   renderDrops();
 }
-function collides(x,y,z,h) {
-  for(let a=Math.floor(x-.28);a<=Math.floor(x+.28);a++)
+function collides(x,y,z,h,radius=.28) {
+  for(let a=Math.floor(x-radius);a<=Math.floor(x+radius);a++)
     for(let b=Math.floor(y+.00001);b<=Math.floor(y+h-.00001);b++)
-      for(let c=Math.floor(z-.28);c<=Math.floor(z+.28);c++) if(get(a,b,c)) return true;
+      for(let c=Math.floor(z-radius);c<=Math.floor(z+radius);c++) if(get(a,b,c)) return true;
   return false;
 }
 const SAVE_KEY='sky-island-worlds-v1';
@@ -289,7 +298,9 @@ let saveSequence=0;
 function captureWorld() {
   return {schema:'sky-island',version:2,size:N,blocks:Array.from(world),bag:Array.from(inventory),
     player:{...player},view:photoState.enabled?{...photoState.originalView}:{yaw,pitch},time:gameTime,regenAt:Number.isFinite(nextRegenAt)?nextRegenAt:null,
-    effect:{...effectState,nextAt:Number.isFinite(effectState.nextAt)?effectState.nextAt:null},drops:drops.map(d=>({...d})),lastSafe:{...lastSafe},selected};
+    effect:{...effectState,nextAt:Number.isFinite(effectState.nextAt)?effectState.nextAt:null},
+    encounter:{monsters:monsters.map(m=>({id:m.id,x:m.x,y:m.y,z:m.z,vy:m.vy||0,placed:m.placed,nextAttackAt:m.nextAttackAt})),despawnAt:monstersDespawnAt,wasBlind:monstersWereBlind},
+    combat:{invincibleUntil:combatState.invincibleUntil,lastHits:combatState.lastHits.map(h=>({...h}))},drops:drops.map(d=>({...d})),lastSafe:{...lastSafe},selected};
 }
 function validateWorld(data) {
   const finite=(n,min,max)=>Number.isFinite(n)&&n>=min&&n<=max;
@@ -304,6 +315,16 @@ function validateWorld(data) {
   if(!data.effect||!(data.effect.type===null||effectKinds.includes(data.effect.type))||!finite(data.effect.endsAt,0,1e9)||!(finite(data.effect.nextAt,0,1e9)||(data.version===2&&data.effect.nextAt===null)))throw Error('效果資料不正確');
   if(data.version===2&&(typeof data.effect.armed!=='boolean'||typeof data.effect.firstPending!=='boolean'))throw Error('首次效果資料不正確');
   const effect=data.version===1?{type:data.effect.type,endsAt:data.effect.type?data.time+60:0,nextAt:data.time+70,armed:true,firstPending:false}:{type:data.effect.type,endsAt:data.effect.endsAt,nextAt:data.effect.nextAt,armed:data.effect.armed,firstPending:data.effect.firstPending};
+  let encounter={monsters:[],despawnAt:0,wasBlind:false},combat={invincibleUntil:0,lastHits:[]};
+  if(data.version===2){
+    const e=data.encounter,c=data.combat;
+    if(!e||!Array.isArray(e.monsters)||e.monsters.length>5||!finite(e.despawnAt,0,1e9)||typeof e.wasBlind!=='boolean'||!e.monsters.every(m=>integer(m.id,1,5)&&point(m)&&typeof m.placed==='boolean'&&finite(m.nextAttackAt,0,1e9)&&finite(m.vy,-10000,10000)&&(!m.placed||(finite(m.x,.45,N-.45)&&finite(m.z,.45,N-.45)&&finite(m.y,-8,30)))))throw Error('怪物資料不正確');
+    if(new Set(e.monsters.map(m=>m.id)).size!==e.monsters.length)throw Error('怪物編號重複');
+    if(!c||!finite(c.invincibleUntil,0,1e9)||!Array.isArray(c.lastHits)||c.lastHits.length>2||!c.lastHits.every(h=>integer(h.id,1,5)&&finite(h.time,0,data.time)))throw Error('無敵或連擊資料不正確');
+    if(data.effect.armed&&data.effect.nextAt===null)throw Error('已啟動的排程不能缺少時間');
+    encounter={monsters:e.monsters.map(m=>({id:m.id,x:m.x,y:m.y,z:m.z,vy:m.vy,placed:m.placed,nextAttackAt:m.nextAttackAt})),despawnAt:e.despawnAt,wasBlind:e.wasBlind};
+    combat={invincibleUntil:c.invincibleUntil,lastHits:c.lastHits.map(h=>({id:h.id,time:h.time}))};
+  }
   if(!Array.isArray(data.drops)||data.drops.length>32768||!data.drops.every(d=>point(d)&&integer(d.type,1,8)&&integer(d.count,1,1e9)&&finite(d.vy,-10000,10000)&&finite(d.phase,0,100)&&finite(d.pickupAt,0,1e9)))throw Error('掉落物資料不正確');
   const h=data.player.crouched?1.45:1.8;
   for(let x=Math.floor(data.player.x-.28);x<=Math.floor(data.player.x+.28);x++)
@@ -314,7 +335,7 @@ function validateWorld(data) {
   return {schema:'sky-island',version:2,size:N,blocks:data.blocks.slice(),bag:data.bag.slice(),
     player:{...copyPoint(data.player),health:data.player.health,vy:data.player.vy,peakY:data.player.peakY,ground:data.player.ground,crouched:data.player.crouched},
     view:{yaw:data.view.yaw,pitch:data.view.pitch},time:data.time,regenAt:data.regenAt,selected:data.selected,lastSafe:copyPoint(data.lastSafe),
-    effect,
+    effect,encounter,combat,
     drops:data.drops.map(d=>({...copyPoint(d),type:d.type,count:d.count,vy:d.vy,phase:d.phase,pickupAt:d.pickupAt}))};
 }
 function restoreWorld(input) {
@@ -323,7 +344,10 @@ function restoreWorld(input) {
   pause();world.set(data.blocks);inventory.set(data.bag);Object.assign(player,data.player);
   yaw=data.view.yaw;pitch=data.view.pitch;gameTime=data.time;nextRegenAt=data.regenAt===null?Infinity:data.regenAt;
   Object.assign(effectState,data.effect);effectState.nextAt=data.effect.nextAt===null?Infinity:data.effect.nextAt;lastSafe={...data.lastSafe};selected=data.selected;
+  resetMonsters();data.encounter.monsters.forEach(m=>monsters.push({...m,goal:null}));monstersDespawnAt=data.encounter.despawnAt;monstersWereBlind=data.encounter.wasBlind;
+  Object.assign(combatState,{invincibleUntil:data.combat.invincibleUntil,lastHits:data.combat.lastHits.map(h=>({...h}))});
   clearDrops();data.drops.forEach(d=>drops.push({...d}));renderDrops();rebuild();resetDig();
+  if(effectState.type==='blindness'&&!monsters.length){spawnMonsters();monstersWereBlind=true;}renderMonsters();
   damageFlashUntil=0;messageUntil=0;$('#notice').textContent='';applyEffectVision();updateEffectLabel();updateInventory();updateHealth();updateCamera();
 }
 function storageFor(store){return store||window.localStorage;}
@@ -565,6 +589,7 @@ function placementCell(t) {
   if(!t||t.distance>5||selected>=8||!inventory[selected+1]) return null;
   const x=t.x+t.n.x,y=t.y+t.n.y,z=t.z+t.n.z,h=player.crouched?1.45:1.8;
   if(!inside(x,y,z)||get(x,y,z)) return null;
+  if(monsters.some(m=>m.placed&&x+1>m.x-.45&&x<m.x+.45&&z+1>m.z-.45&&z<m.z+.45&&y+1>m.y&&y<m.y+2))return null;
   if(x+1>player.x-.28&&x<player.x+.28&&z+1>player.z-.28&&z<player.z+.28&&y+1>player.y+.00001&&y<player.y+h-.00001) return null;
   return {x,y,z};
 }
