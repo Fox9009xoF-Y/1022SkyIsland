@@ -29,6 +29,7 @@ flowchart TB
   game --> interact["target / updateMining / placeBlock：方塊互動"]
   game --> items["inventory / drops / updateDrops / renderDrops：物品"]
   game --> life["damage / updateHealthClock / die / respawn：生命"]
+  game --> audio["P14：使用者手勢啟用 Web Audio，材質/動作合成短音，步距觸發腳步"]
   game --> loop["frame：唯一 requestAnimationFrame 迴圈"]
   tests["check.cjs：隔離 VM、真實幾何、模擬 DOM 與 renderer"] --> game
   tests --> verify

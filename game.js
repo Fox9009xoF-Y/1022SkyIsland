@@ -20,6 +20,7 @@ let gameTime = 0, nextRegenAt = Infinity, damageFlashUntil = 0, messageUntil = 0
 // E01 排程、E02 水平加減速、E03 跳高、E04 徑向致盲。
 const effectKinds = Object.freeze(['blindness','speed','slowness','jumpBoost']);
 const effectState = {type:null, endsAt:0, nextAt:Infinity};
+let audioContext=null,audioMuted=false,footstepDistance=0,lastDigSoundAt=-Infinity;
 let lastSafe = {x:16.5, y:14, z:23.5};
 const at = (x,y,z) => x + N * (z + N*y);
 const inside = (x,y,z) => x>=0 && z>=0 && y>=0 && x<N && z<N && y<N;
@@ -269,6 +270,21 @@ function refreshSaveList(selectedId) {
   if(selectedId)select.value=selectedId;
 }
 function saveAction(action){try{action();$('#save-status').textContent='完成';}catch(e){$('#save-status').textContent='未完成：'+e.message;}}
+function soundProfile(type,action) {
+  const frequency=[0,115,95,230,155,410,185,125,270][type]||115;
+  return {frequency:frequency*(action==='place'?.8:action==='step'?.6:1),duration:action==='step'?.045:action==='place'?.12:.09,wave:type===3||type===8?'square':type===5?'triangle':'sawtooth'};
+}
+function unlockAudio() {
+  try{const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return false;if(!audioContext)audioContext=new Audio();if(audioContext.state==='suspended')audioContext.resume().catch(()=>{});return true;}catch{return false;}
+}
+function playBlockSound(type,action) {
+  if(audioMuted||!audioContext||audioContext.state!=='running')return false;
+  try{const p=soundProfile(type,action),osc=audioContext.createOscillator(),gain=audioContext.createGain(),now=audioContext.currentTime;
+    osc.type=p.wave;osc.frequency.setValueAtTime(p.frequency,now);osc.frequency.exponentialRampToValueAtTime(p.frequency*.45,now+p.duration);
+    gain.gain.setValueAtTime(.025,now);gain.gain.exponentialRampToValueAtTime(.0001,now+p.duration);
+    osc.connect(gain);gain.connect(audioContext.destination);osc.start(now);osc.stop(now+p.duration);osc.onended=()=>{osc.disconnect();gain.disconnect();};return true;
+  }catch{return false;}
+}
 function resetEffects() {
   effectState.type=null;
   effectState.endsAt=0;
@@ -376,6 +392,7 @@ function updateCamera() {
   camera.rotation.set(pitch,yaw,0);
 }
 function move(dt) {
+  const beforeX=player.x,beforeZ=player.z;
   // 起身時確認頭頂空間，避免在低矮通道中穿入方塊。
   player.crouched=keys.has('ControlLeft')||collides(player.x,player.y,player.z,1.8);
   const crouch=player.crouched,h=crouch?1.45:1.8;
@@ -415,6 +432,8 @@ function move(dt) {
   player.peakY=Math.max(player.peakY,player.y);
   if(player.ground) { player.peakY=player.y; lastSafe={x:player.x,y:player.y,z:player.z}; }
   if(player.y< -12) die(true);
+  const walked=Math.hypot(player.x-beforeX,player.z-beforeZ);
+  if(player.ground&&walked>0&&walked<1.5){footstepDistance+=walked;if(footstepDistance>=.6){footstepDistance%=.6;playBlockSound(get(Math.floor(player.x),Math.floor(player.y-.05),Math.floor(player.z))||1,'step');}}
   updateCamera();
 }
 const ray=new THREE.Raycaster(); ray.far=5;
@@ -425,7 +444,7 @@ function target() {
   const p=result.point.clone().addScaledVector(result.face.normal,-.001);
   return {x:Math.floor(p.x),y:Math.floor(p.y),z:Math.floor(p.z),n:result.face.normal,distance:result.distance};
 }
-function resetDig() { held=false; dig=0; digKey=''; crack.visible=false; }
+function resetDig() { lastDigSoundAt=-Infinity; held=false; dig=0; digKey=''; crack.visible=false; }
 function updateInventory() {
   slots.forEach((b,i)=>{
     b.classList.toggle('active',selected===i);
@@ -466,7 +485,7 @@ function placeBlock(t) {
   const {x,y,z}=cell;
   set(x,y,z,type);
   if(collides(player.x,player.y,player.z,player.crouched?1.45:1.8)) { set(x,y,z,0); return false; }
-  inventory[type]--; rebuild(); updateInventory(); return true;
+  inventory[type]--; rebuild(); updateInventory(); playBlockSound(type,'place'); return true;
 }
 function updateMining(dt) {
   hit=target(); updatePlacementPreview(hit); outline.visible=!!hit; crack.visible=false;
@@ -476,6 +495,7 @@ function updateMining(dt) {
   const key=[hit.x,hit.y,hit.z].join(',');
   if(key!==digKey) { dig=0; digKey=key; }
   if(held) {
+    if(gameTime-lastDigSoundAt>=.18){playBlockSound(type,'dig');lastDigSoundAt=gameTime;}
     dig+=dt; crack.visible=true; crack.position.copy(outline.position);
     crack.material=cracks[Math.min(9,Math.floor(dig/duration*10))];
     $('#target').textContent=names[type]+' · 挖掘 '+Math.min(100,Math.floor(dig/duration*100))+'%';
@@ -500,6 +520,7 @@ function pause() {
 }
 $('#play').onclick=()=>{
   if(!ready) return;
+  unlockAudio();
   playing=true; lookPointer=null; resetDig(); keys.clear(); $('#overlay').classList.add('hidden');
   document.body.classList.add('playing'); $('#play').textContent='繼續探索 →'; showLookHint();
   try { const request=$('#game').requestPointerLock?.(); if(request&&typeof request.catch==='function') request.catch(showLookHint); }
@@ -559,6 +580,7 @@ $('#fullscreen').onclick=async()=>{
   try { if(document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
   catch { $('#fullscreen').textContent='請使用瀏覽器 F11'; }
 };
+$('#sound-toggle').onclick=()=>{audioMuted=!audioMuted;if(!audioMuted)unlockAudio();$('#sound-toggle').textContent='音效：'+(audioMuted?'關':'開');};
 $('#save-world').onclick=()=>saveAction(()=>{const id=saveWorld($('#world-name').value);refreshSaveList(id);});
 $('#load-world').onclick=()=>saveAction(()=>loadSavedWorld($('#save-list').value));
 $('#rename-world').onclick=()=>saveAction(()=>{const id=$('#save-list').value;renameSavedWorld(id,$('#world-name').value);refreshSaveList(id);});
