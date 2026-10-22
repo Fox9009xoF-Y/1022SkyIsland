@@ -322,3 +322,21 @@ vm.runInContext(`{
  gameTime=20;updateEffectLabel();expect($('#effect-label').textContent==='','N01 expired label');updatePlacementPreview(t);pause();expect(!placementPreview.visible,'N01 pause preview');resetEffects();
 }`,context);
 console.log('通過 N01：半透明放置預覽、不改資料、拒絕條件、四種效果名稱倒數及暫停。');
+
+vm.runInContext(`{
+ flat();resetEffects();player.health=7;inventory[3]=4;yaw=.7;pitch=.2;spawnDrop(4,2,14.5,5,14.5,0);
+ const snapshot=captureWorld();expect(snapshot.blocks.length===32768&&snapshot.bag[3]===4,'N02 capture');
+ set(0,0,0,8);expect(snapshot.blocks[0]===0,'N02 deep copy');restoreWorld(snapshot);expect(world[0]===0&&inventory[3]===4&&player.health===7&&drops[0].count===2&&yaw===.7,'N02 restore');
+ for(const mutate of [s=>s.version=9,s=>s.blocks.pop(),s=>s.blocks[0]=9,s=>s.bag[1]=-1,s=>s.player.x=NaN,s=>s.effect.type='evil',s=>s.drops[0].count=-1]){
+  const broken=JSON.parse(JSON.stringify(snapshot));mutate(broken);const before=JSON.stringify(captureWorld());let failed=false;try{restoreWorld(broken);}catch{failed=true;}expect(failed&&JSON.stringify(captureWorld())===before,'N02 reject atomic');
+ }
+ const memory={value:null,getItem(){return this.value;},setItem(k,v){this.value=v;}};
+ const id=saveWorld('世界 A',memory);expect(listSavedWorlds(memory)[0].name==='世界 A','N02 save name');
+ renameSavedWorld(id,'<b>世界 B</b>',memory);expect(listSavedWorlds(memory)[0].name==='<b>世界 B</b>','N02 rename text');
+ let failed=false;try{renameSavedWorld(id,'  ',memory);}catch{failed=true;}expect(failed,'N02 empty name reject');
+ const backup=exportSavedWorld(id,memory),second=importSavedWorld(backup,memory);expect(second!==id&&listSavedWorlds(memory).length===2,'N02 backup new id');
+ inventory[3]=0;loadSavedWorld(id,memory);expect(inventory[3]===4,'N02 load persisted');
+ failed=false;try{saveWorld('X',{getItem(){return null;},setItem(){throw Error('quota');}});}catch{failed=true;}expect(failed,'N02 quota error');
+ failed=false;try{importSavedWorld('x'.repeat(2000001),memory);}catch{failed=true;}expect(failed&&listSavedWorlds(memory).length===2,'N02 oversized reject');
+}`,context);
+console.log('通過 N02：快照深拷貝、完整還原、壞檔原子拒絕、命名改名、備份往返、容量與大小錯誤。');
