@@ -22,6 +22,9 @@ const effectKinds = Object.freeze(['blindness','speed','slowness','jumpBoost']);
 const effectState = {type:null, endsAt:0, nextAt:Infinity,armed:false,firstPending:true};
 let photoDirectory=null,photoCaptureBusy=false,photoSequence=0;
 let audioContext=null,audioMuted=false,footstepDistance=0,lastDigSoundAt=-Infinity;
+let worldRevision=0;
+const monsters=[];const MONSTER_SPEED=4.3*1.1;
+let monstersDespawnAt=0,monstersWereBlind=false,monsterNav=null;
 let lastSafe = {x:16.5, y:14, z:23.5};
 const at = (x,y,z) => x + N * (z + N*y);
 const inside = (x,y,z) => x>=0 && z>=0 && y>=0 && x<N && z<N && y<N;
@@ -123,6 +126,7 @@ const faces = [
 const tile = (b,f) => b===1 ? (f===2?0:f===3?2:1) : b===4 ? (f===2||f===3?5:4) : ({2:2,3:3,5:6,6:7,7:8,8:9})[b];
 let terrain = null;
 function rebuild() {
+  worldRevision++;
   const groups = materials.map(() => ({p:[],uv:[],c:[]}));
   for (let y=0;y<N;y++) for (let z=0;z<N;z++) for (let x=0;x<N;x++) {
     const b = get(x,y,z); if (!b) continue;
@@ -164,6 +168,61 @@ for(let type=1;type<=8;type++) placementMaterials[type]=faces.map((_,i)=>{
 });
 const placementPreview=new THREE.Mesh(new THREE.BoxGeometry(.998,.998,.998),placementMaterials[1]);
 placementPreview.visible=false;scene.add(placementPreview);
+const monsterMaterials=faces.map((_,i)=>{const m=materials[tile(4,i)].clone();m.vertexColors=false;installBlindnessFog(m);return m;});
+const monsterMesh=new THREE.InstancedMesh(new THREE.BoxGeometry(.9,1,.9),monsterMaterials,10);
+monsterMesh.count=0;monsterMesh.frustumCulled=false;monsterMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);scene.add(monsterMesh);
+const monsterDummy=new THREE.Object3D();
+function renderMonsters(){monsterMesh.count=0;for(const m of monsters)if(m.placed)for(let h=0;h<2;h++){monsterDummy.position.set(m.x,m.y+h+.5,m.z);monsterDummy.updateMatrix();monsterMesh.setMatrixAt(monsterMesh.count++,monsterDummy.matrix);}monsterMesh.instanceMatrix.needsUpdate=true;}
+function resetMonsters(){monsters.length=0;monstersDespawnAt=0;monstersWereBlind=false;monsterNav=null;monsterMesh.count=0;}
+function monsterNavigation(){
+  const px=Math.max(0,Math.min(31,Math.floor(player.x))),pz=Math.max(0,Math.min(31,Math.floor(player.z))),py=Math.floor(player.y);
+  if(monsterNav&&monsterNav.revision===worldRevision&&monsterNav.px===px&&monsterNav.pz===pz&&monsterNav.py===py&&gameTime-monsterNav.time<.25)return monsterNav;
+  const heights=new Int16Array(N*N).fill(-1),distance=new Int16Array(N*N).fill(-1);
+  for(let z=0;z<N;z++)for(let x=0;x<N;x++){let best=Infinity;for(let y=0;y<N-2;y++)if(get(x,y,z)&&!get(x,y+1,z)&&!get(x,y+2,z)){const delta=Math.abs(y+1-player.y);if(delta<best){heights[x+N*z]=y+1;best=delta;}}}
+  let root=px+N*pz;
+  if(heights[root]<0){let best=Infinity;root=-1;for(let i=0;i<N*N;i++)if(heights[i]>=0){const d=(i%N+.5-player.x)**2+(Math.floor(i/N)+.5-player.z)**2;if(d<best){best=d;root=i;}}}
+  if(root>=0){const queue=new Int16Array(N*N);let front=0,back=0;queue[back++]=root;distance[root]=0;
+    while(front<back){const i=queue[front++],x=i%N,z=Math.floor(i/N);for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,nz=z+dz,j=nx+N*nz;if(nx<0||nx>=N||nz<0||nz>=N||distance[j]>=0||heights[j]<0||Math.abs(heights[j]-heights[i])>1)continue;distance[j]=distance[i]+1;queue[back++]=j;}}
+  }
+  monsterNav={heights,distance,revision:worldRevision,px,pz,py,time:gameTime};return monsterNav;
+}
+function spawnMonsters(){
+  resetMonsters();const nav=monsterNavigation(),all=[],far=[];
+  for(let i=0;i<N*N;i++)if(nav.distance[i]>=0){all.push(i);if(nav.distance[i]>=4&&nav.distance[i]<=12)far.push(i);}
+  const candidates=far.length?far:all;
+  for(let id=1;id<=5;id++){const index=candidates.length?candidates.splice(Math.floor(Math.random()*candidates.length),1)[0]:all[0];monsters.push({id,x:index===undefined?0:index%N+.5,y:index===undefined?0:nav.heights[index],z:index===undefined?0:Math.floor(index/N)+.5,placed:index!==undefined,nextAttackAt:gameTime,goal:null});}
+  renderMonsters();
+}
+function syncMonsterLifecycle(previousType,previousEnd){
+  if(effectState.type==='blindness'){if(monstersDespawnAt&&gameTime>=monstersDespawnAt)resetMonsters();if(!monsters.length)spawnMonsters();monstersWereBlind=true;monstersDespawnAt=0;}
+  else if(monstersWereBlind||previousType==='blindness'){monstersWereBlind=false;monstersDespawnAt=previousEnd+10;}
+  if(monstersDespawnAt&&gameTime>=monstersDespawnAt)resetMonsters();
+}
+function monsterSupported(x,y,z){for(let a=Math.floor(x-.28);a<=Math.floor(x+.28);a++)for(let c=Math.floor(z-.28);c<=Math.floor(z+.28);c++)if(get(a,Math.floor(y-.05),c))return true;return false;}
+function monsterGoal(m,nav){
+  const x=Math.floor(m.x),z=Math.floor(m.z),i=x+N*z;if(x<0||x>=N||z<0||z>=N||nav.distance[i]<0)return null;
+  if(Math.abs(m.x-x-.5)>.001||Math.abs(m.z-z-.5)>.001)return {x:x+.5,z:z+.5,index:i,revision:worldRevision};
+  if(nav.distance[i]===0)return {x:player.x,z:player.z,index:i,revision:worldRevision};
+  let best=i;for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,nz=z+dz,j=nx+N*nz;if(nx>=0&&nx<N&&nz>=0&&nz<N&&nav.distance[j]>=0&&nav.distance[j]<nav.distance[best]&&Math.abs(nav.heights[j]-nav.heights[i])<=1)best=j;}
+  return best===i?null:{x:best%N+.5,z:Math.floor(best/N)+.5,index:best,revision:worldRevision};
+}
+function updateMonsters(dt){
+  if(!active()||!ready||photoState.enabled)return;
+  if(monstersDespawnAt&&gameTime>=monstersDespawnAt){resetMonsters();return;}
+  if(!monsters.length)return;const nav=monsterNavigation();
+  for(const m of monsters){if(!m.placed)continue;let budget=MONSTER_SPEED*dt,iterations=0;
+    while(budget>1e-8&&iterations++<100){
+      if(Math.hypot(m.x-player.x,m.z-player.z)<=1.2)break;
+      if(m.goal&&(m.goal.revision!==worldRevision||nav.distance[m.goal.index]<0))m.goal=null;
+      if(!m.goal)m.goal=monsterGoal(m,nav);if(!m.goal)break;
+      const dx=m.goal.x-m.x,dz=m.goal.z-m.z,d=Math.hypot(dx,dz);if(d<1e-8){m.goal=null;continue;}
+      const step=Math.min(.06,budget,d),x=m.x+dx/d*step,z=m.z+dz/d*step;
+      let nextY=null;for(const y of [m.y,m.y+1,m.y-1])if(!collides(x,y,z,2)&&monsterSupported(x,y,z)){nextY=y;break;}
+      if(nextY===null){m.goal=null;break;}m.x=x;m.y=nextY;m.z=z;budget-=step;if(step>=d-1e-8)m.goal=null;
+    }
+  }
+  renderMonsters();
+}
 const dummy = new THREE.Object3D();
 function renderDrops() {
   const counts = new Uint32Array(9);
@@ -308,6 +367,7 @@ function playBlockSound(type,action) {
   }catch{return false;}
 }
 function resetEffects() {
+  resetMonsters();
   Object.assign(effectState,{type:null,endsAt:0,nextAt:Infinity,armed:false,firstPending:true});
   applyEffectVision();updateEffectLabel();
 }
@@ -315,12 +375,14 @@ function armFirstEffect(){if(!effectState.armed){effectState.armed=true;effectSt
 function chooseEffect(random=Math.random()){return random<.4?'blindness':random<.6?'speed':random<.8?'slowness':'jumpBoost';}
 function updateEffects() {
   if(!active()||!ready)return;
+  const previousType=effectState.type,previousEnd=effectState.endsAt;
   if(effectState.type!==null&&gameTime>=effectState.endsAt){effectState.type=null;effectState.endsAt=0;}
   if(effectState.armed&&gameTime>=effectState.nextAt){
     effectState.type=effectState.firstPending?'blindness':chooseEffect();
     effectState.firstPending=false;effectState.endsAt=gameTime+60;
     effectState.nextAt=gameTime+70+Math.random()*30;
   }
+  syncMonsterLifecycle(previousType,previousEnd);
   applyEffectVision();updateEffectLabel();
 }
 function generate() {
@@ -686,7 +748,7 @@ function frame(now) {
     updateHealthClock(dt);
     updateEffects();
     for(let t=0;t<6;t++) move(dt/6);
-    updateMining(dt); updateDrops(dt);
+    updateMonsters(dt);updateMining(dt); updateDrops(dt);
     }
   } else { outline.visible=crack.visible=false; $('#target').textContent=''; }
   renderer.render(scene,camera);
