@@ -271,3 +271,40 @@ vm.runInContext(`{
  }finally{Math.random=savedRandom;playing=false;resetEffects();}
 }`,context);
 console.log('通過 E03：三種物理子步的最高腳底增加三格、非跳躍效果不變、到期還原、防空跳/蹲跳及 frame 整合。');
+
+// E04：狀態整合與 shader 注入契約；不將此測試當成真實 WebGL 畫面證據。
+vm.runInContext(`{
+ flat();playing=true;ready=true;gameTime=0;resetEffects();
+ effectState.type='blindness';effectState.endsAt=20;effectState.nextAt=60;updateEffects();
+ expect(scene.background.getHex()===0&&scene.fog.color.getHex()===0,'E04 black sky and fog');
+ expect(scene.fog.near===0&&scene.fog.far===3,'E04 three block gradient');
+ expect(blindnessUniform.value===1,'E04 radial fog enabled');
+ // 每個地形、裂痕、線框及掉落物材質都必須有相同的徑向霧 shader。
+ const fogMaterials=[...materials,...cracks,outline.material,...dropBatches.slice(1).flatMap(m=>m.material)];
+ const versions=fogMaterials.map(m=>m.version);
+ for(const m of fogMaterials){
+  const shader={uniforms:{},vertexShader:THREE.ShaderLib.basic.vertexShader,fragmentShader:THREE.ShaderLib.basic.fragmentShader};
+  m.onBeforeCompile(shader,renderer);
+  expect(shader.uniforms.blindnessActive===blindnessUniform,'E04 shared uniform');
+  expect(shader.vertexShader.includes('vRadialFogPosition = mvPosition.xyz'),'E04 camera space varying');
+  expect(shader.fragmentShader.includes('length(vRadialFogPosition)'),'E04 per fragment radial distance');
+  expect(shader.fragmentShader.includes('smoothstep( fogNear, fogFar, fogDistance )'),'E04 smooth gradient');
+ }
+ // smoothstep 的半徑契約：中心清楚、內部遞減、距離 3 與更遠全黑。
+ function brightness(distance){const t=Math.max(0,Math.min(1,(distance-scene.fog.near)/(scene.fog.far-scene.fog.near)));return 1-t*t*(3-2*t);}
+ expect(brightness(0)===1&&brightness(1)>brightness(2)&&brightness(2)>0,'E04 inner gradient');
+ expect(brightness(3)===0&&brightness(4)===0&&brightness(Math.hypot(2.5,0,2.5))===0,'E04 far and oblique black');
+ gameTime=19.999;updateEffects();expect(scene.fog.far===3,'E04 active until end');
+ pause();const pausedFog=scene.fog.far,pausedTime=gameTime;last=0;frame(100);expect(scene.fog.far===pausedFog&&gameTime===pausedTime,'E04 paused vision frozen');
+ playing=true;ready=true;gameTime=20;updateEffects();
+ expect(scene.background.getHex()===0xbfe0f4&&scene.fog.color.getHex()===0xbfe0f4&&scene.fog.near===30&&scene.fog.far===65&&blindnessUniform.value===0,'E04 expiry restores all vision');
+ expect(fogMaterials.every((m,i)=>m.version===versions[i]),'E04 no recompilation each effect');
+ effectState.type='blindness';effectState.endsAt=40;updateEffects();generate();expect(scene.background.getHex()===0xbfe0f4&&scene.fog.far===65&&blindnessUniform.value===0,'E04 new world restores');
+ const savedRandom=Math.random;
+ try{
+  Math.random=()=>0;flat();gameTime=0;resetEffects();gameTime=29.95;playing=true;ready=true;last=0;frame(100);
+  expect(effectState.type==='blindness'&&scene.background.getHex()===0&&scene.fog.far===3,'E04 frame integration');
+  expect(ray.far===5,'E04 interaction reach remains five');
+ }finally{Math.random=savedRandom;playing=false;resetEffects();}
+}`,context);
+console.log('通過 E04：黑色背景、三格徑向漸層 shader、全部場景材質、到期/新局恢復、暫停與 frame；WebGL 畫面仍待實機。');

@@ -108,8 +108,9 @@ flowchart TD
   effectClear --> effectDue
   effectDue -->|否| effectKeep
   effectDue -->|是| effectStart["隨機一種，持續 20 秒；從現在重排 30 至 60 秒"]
-  effectStart --> six["六次 move dt/6 子步"]
-  effectKeep --> six
+  effectStart --> vision["E04：blindness 使用黑背景與半徑三格漸層；其餘恢復正常霧"]
+  effectKeep --> vision
+  vision --> six["六次 move dt/6 子步"]
   six --> input["讀 keys，決定蹲姿、步行或奔跑速度"]
   input --> multiplier["E02：speed 乘 1.5、slowness 乘 0.5、其餘乘 1；不改基礎速度"]
   multiplier --> horizontal["依 yaw 移動，檢查碰撞與蹲姿邊緣保護"]
@@ -276,3 +277,8 @@ E02 本輪結果：紅燈提交 b37482d 後接入移動倍率，全部 G01～G14
 在原 move 起跳條件內選速度：jumpBoost 使用 sqrt(7²+2×20×3)，其餘使用 7；不變更空跳、蹲跳、重力與碰撞條件。以多種子步的最高腳底高度驗收三格差及到期還原。E02 全綠後依最新授權直接接續本步，但仍先紅燈提交，再實作及所有前段回歸。
 
 E03 最新結果：經使用者授權只修正空中測試起點 y=5，原斷言保留；G01～G14/E01～E03 全過。跳高作用已完成，僅致盲 E04 待實作。
+
+
+### E04 徑向致盲作用（本輪 TDD）
+
+updateEffects/resetEffects 同步 applyEffectVision，切換共用 blindnessUniform 與原場景背景/霧值。材質 onBeforeCompile 在 vertex 傳出 mvPosition.xyz，再在 fragment 取 length，致盲時才切換徑向距離；正常模式維持原 z 深度。smoothstep 從 0 到 3 格混向黑色，三格外全黑。地形、裂痕、outline 及 drop clone 都接同一 uniform，避免漏光或反覆編譯。程式契約可自動測試，最終 WebGL 畫面仍須實機觀察。
