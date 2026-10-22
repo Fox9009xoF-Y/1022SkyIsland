@@ -20,6 +20,7 @@ let gameTime = 0, nextRegenAt = Infinity, damageFlashUntil = 0, messageUntil = 0
 // E01 排程、E02 水平加減速、E03 跳高、E04 徑向致盲。
 const effectKinds = Object.freeze(['blindness','speed','slowness','jumpBoost']);
 const effectState = {type:null, endsAt:0, nextAt:Infinity};
+let photoDirectory=null,photoCaptureBusy=false,photoSequence=0;
 let audioContext=null,audioMuted=false,footstepDistance=0,lastDigSoundAt=-Infinity;
 let lastSafe = {x:16.5, y:14, z:23.5};
 const at = (x,y,z) => x + N * (z + N*y);
@@ -240,7 +241,17 @@ function validateWorld(data) {
   if(data.regenAt!==null&&!finite(data.regenAt,0,1e9))throw Error('回血時間不正確');
   if(!data.effect||!(data.effect.type===null||effectKinds.includes(data.effect.type))||!finite(data.effect.endsAt,0,1e9)||!finite(data.effect.nextAt,0,1e9))throw Error('效果資料不正確');
   if(!Array.isArray(data.drops)||data.drops.length>32768||!data.drops.every(d=>point(d)&&integer(d.type,1,8)&&integer(d.count,1,1e9)&&finite(d.vy,-10000,10000)&&finite(d.phase,0,100)&&finite(d.pickupAt,0,1e9)))throw Error('掉落物資料不正確');
-  return JSON.parse(JSON.stringify(data));
+  const h=data.player.crouched?1.45:1.8;
+  for(let x=Math.floor(data.player.x-.28);x<=Math.floor(data.player.x+.28);x++)
+    for(let y=Math.floor(data.player.y+.00001);y<=Math.floor(data.player.y+h-.00001);y++)
+      for(let z=Math.floor(data.player.z-.28);z<=Math.floor(data.player.z+.28);z++)
+        if(inside(x,y,z)&&data.blocks[at(x,y,z)])throw Error('玩家位置位於實心方塊內');
+  const copyPoint=p=>({x:p.x,y:p.y,z:p.z});
+  return {schema:'sky-island',version:1,size:N,blocks:data.blocks.slice(),bag:data.bag.slice(),
+    player:{...copyPoint(data.player),health:data.player.health,vy:data.player.vy,peakY:data.player.peakY,ground:data.player.ground,crouched:data.player.crouched},
+    view:{yaw:data.view.yaw,pitch:data.view.pitch},time:data.time,regenAt:data.regenAt,selected:data.selected,lastSafe:copyPoint(data.lastSafe),
+    effect:{type:data.effect.type,endsAt:data.effect.endsAt,nextAt:data.effect.nextAt},
+    drops:data.drops.map(d=>({...copyPoint(d),type:d.type,count:d.count,vy:d.vy,phase:d.phase,pickupAt:d.pickupAt}))};
 }
 function restoreWorld(input) {
   const data=validateWorld(input); // 驗證完成前不碰現有世界。
@@ -556,6 +567,27 @@ window.addEventListener('keydown',e=>{
 });
 window.addEventListener('keyup',e=>keys.delete(e.code)); window.addEventListener('blur',pause);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});
+async function resolvePhotoDirectory() {
+  if(photoDirectory)return photoDirectory;
+  if(typeof window.showDirectoryPicker!=='function')return null;
+  const parent=await window.showDirectoryPicker({id:'mcgame-photos',mode:'readwrite'});
+  photoDirectory=parent.name==='photosave'?parent:await parent.getDirectoryHandle('photosave',{create:true});
+  return photoDirectory;
+}
+async function capturePhoto() {
+  if(!photoState.enabled||photoCaptureBusy)return false;
+  photoCaptureBusy=true;
+  const filename='sky-island-'+new Date().toISOString().replace(/[:.]/g,'-')+'-'+(++photoSequence)+'.png';
+  $('#photo-status').textContent='正在拍照…';
+  try{
+    let directory=null;
+    try{directory=await resolvePhotoDirectory();}catch(e){if(e.name==='AbortError'){$('#photo-status').textContent='已取消儲存位置選擇';return {method:'cancelled'};}photoDirectory=null;}
+    updateCamera();outline.visible=crack.visible=placementPreview.visible=false;renderer.render(scene,camera);
+    const blob=await new Promise((resolve,reject)=>$('#game').toBlob(b=>b?resolve(b):reject(Error('無法建立 PNG')),'image/png'));
+    if(directory){try{const file=await directory.getFileHandle(filename,{create:true});const stream=await file.createWritable();await stream.write(blob);await stream.close();$('#photo-status').textContent='已保存至 photosave / '+filename;return {method:'folder',filename};}catch{photoDirectory=null;}}
+    downloadBlob(blob,filename);$('#photo-status').textContent='已下載 PNG；請手動移入 mcgame/photosave';return {method:'download',filename};
+  }catch(e){$('#photo-status').textContent='拍照未完成：'+e.message;return false;}finally{photoCaptureBusy=false;}
+}
 function togglePhotoMode() {
   if(!photoState.enabled){
     if(!active()||!ready)return false;updateCamera();photoState.position.copy(camera.position);

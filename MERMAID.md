@@ -10,7 +10,7 @@
 flowchart TB
   rules["AGENTS.md：工作規則"] --> brief["BRIEF.md：需求與使用者明確決定"]
   brief --> plan["PLANS.md：P01 至 P11 的建構順序"]
-  plan --> verify["VERIFY.md：V01 至 V37 驗收標準"]
+  plan --> verify["VERIFY.md：V01 至 V50 驗收標準"]
   verify --> report["VERIFICATION.md：本輪結果與證據"]
   html["index.html：DOM、畫布、HUD、選單"] --> css["style.css：全螢幕、中央準心、愛心及快捷欄"]
   html --> three["vendor/three.min.js：本機 three.js"]
@@ -107,7 +107,18 @@ flowchart TD
   active -->|是| look["updateLook dt：相容邊緣轉向"]
   look --> photoBranch{"P16 拍照模式？"}
   photoBranch -->|是| freeCamera["只移動獨立相機，凍結世界時計/生命/互動"]
-  freeCamera --> render
+  freeCamera --> shutter{"P17：O 且未在擷取？"}
+  shutter -->|否| render
+  shutter -->|是| folder["首次選授權目錄，選 mcgame 則建立 photosave"]
+  folder --> cancelled{"使用者取消？"}
+  cancelled -->|是| noPhoto["結束且不下載"]
+  cancelled -->|否| png["立即 render 後 canvas.toBlob PNG；不包含 DOM HUD"]
+  png --> writable{"已授權且寫入成功？"}
+  writable -->|是| saved["保存照片，復用目錄 handle"]
+  writable -->|否| downloaded["下載 PNG，提示手動移入 photosave"]
+  saved --> render
+  downloaded --> render
+  noPhoto --> render
   photoBranch -->|否| clock["updateHealthClock dt：gameTime、回血、提示與傷害遮罩"]
   clock --> effects["E01 排程 updateEffects，E04 同步視野；E02/E03 由 move 套用"]
   effects --> enabled{"playing 且 ready？"}
@@ -259,7 +270,13 @@ flowchart TD
   fix --> each
   result -->|工具或設備不能測| blocked["記錄部分通過或未驗證，保留待辦，不能宣稱全過"]
   result -->|全部通過| next["繼續下一個 P 步驟"]
-  p11 --> all["最後一次修改後完整執行 V01 至 V37"]
+  p11 --> p12["P12：預覽與倒數，V38/V39/V50"]
+  p12 --> p13["P13：存檔/驗證/改名/備份，V40 至 V43"]
+  p13 --> p14["P14：材質音效，V44"]
+  p14 --> p15["P15：晝夜，V45"]
+  p15 --> p16["P16：獨立拍照相機，V46/V47"]
+  p16 --> p17["P17：PNG 與目錄授權，V48/V49"]
+  p17 --> all["最後一次修改後完整執行 V01 至 V50"]
   all --> final{"每一項都有本輪通過證據？"}
   final -->|是| done["交付程式、文件與逐條驗證結果"]
   final -->|否且可修| fix
@@ -302,3 +319,12 @@ E04 最新結果：紅燈提交 57cbfb1 後完成 shader/狀態整合，G01～G1
 ## 新需求 P12～P17 對照（逐步實作）
 
 P12 放置預覽/效果倒數；P13 ESC 命名存檔、完整驗證、改名、匯出/匯入；P14 合成材質音效；P15 晝夜；P16 獨立拍照相機/飛行；P17 O 擷取，使用者授權 photosave 或下載 PNG。新增驗收 V38～V50，原主流程圖後續隨實作更新，文件規劃存在不表示已實作。
+
+
+## 本輪最終狀態
+
+P12～P17 的預覽/倒數、ESC 存檔、音效、晝夜、拍照自由相機與 PNG 保存均已接入，G/E/N 全部 25 組自動測試通過。上方早期「逐步實作」紀錄描述規劃當時狀態，現以此段為準。
+
+存檔路徑：captureWorld→validateWorld 白名單及身體碰撞檢查→localStorage；load/JSON import 先驗證成功再 pause 與完整 restore。照片路徑：P→獨立相機；O→使用者授權目錄→render/toBlob→photosave，失敗或不支援改下載，取消不強制下載。暫停/檔案對話框不強制恢復遊戲，回到選單可按繼續。
+
+照片是 canvas PNG，DOM HUD 與照片提示不會進入圖片；拍照相機的速度/落地不改玩家血量或背包。雙空白落地後 P 退出再進可重啟飛行。八張圖包含新分支但仍未由 Mermaid renderer 實際解析；瀏覽器與硬體效能驗證限制另列報告。

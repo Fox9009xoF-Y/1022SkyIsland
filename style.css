@@ -15,3 +15,5 @@
 .saves{margin-top:15px;border-top:1px solid #ffffff25;padding-top:12px;text-align:left;font-size:12px}.saves input:not([hidden]),.saves select{width:100%;margin:6px 0;padding:8px;background:#24433b;color:#fff;border:1px solid #ffffff40;border-radius:4px;font:inherit}.save-actions{display:flex;gap:5px;margin:5px 0}.save-actions button{font-size:11px;padding:8px;flex:1}#save-status{min-height:18px;color:#ebcb8a;font-size:11px}#overlay section{max-height:94vh;overflow:auto}
 
 #photo-help{display:none;position:absolute;bottom:22px;width:100%;text-align:center;font-size:12px;color:white;text-shadow:0 2px 4px #000;pointer-events:none}.photo-mode header,.photo-mode footer,.photo-mode #stats,.photo-mode #crosshair,.photo-mode #target,.photo-mode #effect-label,.photo-mode #damage-flash,.photo-mode #notice{visibility:hidden}.photo-mode #photo-help{display:block}
+
+#photo-status{display:none;position:absolute;top:25px;width:100%;text-align:center;color:#ffe9af;font-size:12px;text-shadow:0 1px 4px #000;pointer-events:none}.photo-mode #photo-status{display:block}
