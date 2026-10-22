@@ -128,7 +128,7 @@ flowchart TD
   expired -->|否| effectDue{"gameTime 到達 nextAt？"}
   effectClear --> effectDue
   effectDue -->|否| effectKeep
-  effectDue -->|是| effectStart["隨機一種，持續 20 秒；從現在重排 30 至 60 秒"]
+  effectDue -->|是| effectStart["首次強制致盲，之後依 40/20/20/20 抽一種；60 秒效果、70 至 100 秒重排"]
   effectStart --> vision["E04：blindness 使用黑背景與半徑三格漸層；其餘恢復正常霧"]
   effectKeep --> vision
   vision --> skyTime["P15：非致盲時按 gameTime/600 循環日間、夕陽、夜間與黎明"]
@@ -172,7 +172,8 @@ flowchart TD
   time --> complete{"達到該種類的挖掘秒數？"}
   complete -->|否| wait["保持方塊，等待下一幀"]
   complete -->|是| remove["world 該格設為空氣"]
-  remove --> drop["spawnDrop：原格同種類數量 1"]
+  remove --> firstMine["P18：僅第一塊完成後開始十秒首次倒數"]
+  firstMine --> drop["spawnDrop：原格同種類數量 1"]
   drop --> rebuild["rebuild：外露地形更新，清除裂痕"]
   right["右鍵 → placeBlock target"] --> valid{"有命中、距離不超過 5、不是空手？"}
   valid -->|否| deny["拒絕，數量不變"]
@@ -328,3 +329,6 @@ P12～P17 的預覽/倒數、ESC 存檔、音效、晝夜、拍照自由相機�
 存檔路徑：captureWorld→validateWorld 白名單及身體碰撞檢查→localStorage；load/JSON import 先驗證成功再 pause 與完整 restore。照片路徑：P→獨立相機；O→使用者授權目錄→render/toBlob→photosave，失敗或不支援改下載，取消不強制下載。暫停/檔案對話框不強制恢復遊戲，回到選單可按繼續。
 
 照片是 canvas PNG，DOM HUD 與照片提示不會進入圖片；拍照相機的速度/落地不改玩家血量或背包。雙空白落地後 P 退出再進可重啟飛行。八張圖包含新分支但仍未由 Mermaid renderer 實際解析；瀏覽器與硬體效能驗證限制另列報告。
+
+
+本輪 P18～P21：新局等待首塊成功挖掘→十秒後強制致盲→持續六十秒→後續 70～100 秒加權觸發；致盲五隻原木怪追蹤，速度 4.73；每怪每秒一心，兩不同怪連續命中後無敵一秒。新驗收 V51～V57，依本輪使用者明確修訂標準，後續隨程式實作同步。

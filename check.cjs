@@ -160,9 +160,9 @@ console.log('通過 G14：20 個內嵌 PNG 與原始素材逐位元組相同');
 // 文件覆蓋與本機入口路徑檢查；僅驗證 Mermaid 圍欄結構，不冒充 Mermaid 語法解析。
 const read=name=>fs.readFileSync(__dirname+'/'+name,'utf8');
 const verify=read('VERIFY.md'),plans=read('PLANS.md'),mermaid=read('MERMAID.md');
-const expected=Array.from({length:50},(_,i)=>'V'+String(i+1).padStart(2,'0'));
+const expected=Array.from({length:57},(_,i)=>'V'+String(i+1).padStart(2,'0'));
 const rows=[...verify.matchAll(/^\| (V\d{2}) \| (P\d{2}) \|/gm)];
-assert.deepEqual(rows.map(m=>m[1]),expected,'VERIFY 必須有完整且不重複的 V01～V50');
+assert.deepEqual(rows.map(m=>m[1]),expected,'VERIFY 必須有完整且不重複的 V01～V57');
 const firstSteps=new Map();
 for(const section of plans.split(/^## (?=P\d{2})/m).slice(1)){
  const step=section.match(/^P\d{2}/)[0];
@@ -176,46 +176,37 @@ assert.equal((mermaid.match(/^```$/gm)||[]).length,8,'Mermaid 圍欄未閉合');
 const html=read('index.html');
 for(const src of [...html.matchAll(/(?:src|href)="([^"#]+)"/g)].map(m=>m[1]))assert(fs.existsSync(__dirname+'/'+src),'入口引用遺失 '+src);
 for(const name of ['AGENTS.md','BRIEF.md','README.md','VERIFICATION.md','vendor/THREE-LICENSE.txt','sky-island-assets/sky-island-assets/README.txt'])assert(fs.existsSync(__dirname+'/'+name),'缺少檔案 '+name);
-console.log('通過：V01～V50 與 P01～P17 一對一對照、入口本機引用、八張 Mermaid 圍欄結構。尚未驗證 Mermaid 渲染。');
+console.log('通過：V01～V57 與 P01～P21 一對一對照、入口本機引用、八張 Mermaid 圍欄結構。尚未驗證 Mermaid 渲染。');
 console.log(`完成 ${checks.length+1} 組功能檢查及文件靜態檢查。此結果不代表瀏覽器畫面、實際輸入、Mermaid 渲染或硬體 FPS 已驗證。`);
 
-// E01 為 BRIEF 新增排程需求的補充測試；不改動既有 G01～G14 或唯讀 VERIFY。
+// E01/R01 依本輪明確需求改版：先成功挖一塊，十秒後強制首效，後續 70～100/60 秒。
 vm.runInContext(`{
  const savedRandom=Math.random;
- try {
-  playing=true;ready=true;gameTime=0;Math.random=()=>0;
-  resetEffects();expect(effectState.type===null&&effectState.endsAt===0,'E01 initial empty');
-  expect(effectState.nextAt===30,'E01 minimum wait');
-  for(const sample of [0,.5,.999999]){
-   Math.random=()=>sample;gameTime=7;resetEffects();
-   expect(effectState.nextAt>=37&&effectState.nextAt<=67,'E01 wait bounds');
-  }
-  Math.random=()=>0;gameTime=0;resetEffects();
-  gameTime=29.999;updateEffects();expect(effectState.type===null,'E01 no early start');
-  gameTime=30;updateEffects();expect(effectState.type==='blindness'&&effectState.endsAt===50&&effectState.nextAt===60,'E01 first start');
-  gameTime=49.999;updateEffects();expect(effectState.type==='blindness','E01 no early end');
-  gameTime=50;updateEffects();expect(effectState.type===null&&effectState.endsAt===0&&effectState.nextAt===60,'E01 exact end');
-  gameTime=59.999;updateEffects();expect(effectState.type===null,'E01 inactive gap');
-  gameTime=60;updateEffects();expect(effectState.type==='blindness'&&effectState.endsAt===80,'E01 next cycle');
-  const kinds=['blindness','speed','slowness','jumpBoost'];
-  for(let i=0;i<4;i++){
-   gameTime=0;Math.random=()=>0;resetEffects();Math.random=()=>i/4;gameTime=30;updateEffects();
-   expect(effectState.type===kinds[i],'E01 kind '+i);
-   const snapshot=JSON.stringify(effectState);Math.random=()=>.999999;updateEffects();expect(JSON.stringify(effectState)===snapshot,'E01 no redraw or extension');
-  }
-  Math.random=()=>0;gameTime=0;resetEffects();gameTime=30;playing=false;
-  const paused=JSON.stringify(effectState);updateEffects();expect(JSON.stringify(effectState)===paused,'E01 paused scheduler');
-  playing=true;ready=false;updateEffects();expect(JSON.stringify(effectState)===paused,'E01 not ready scheduler');
-  ready=true;updateEffects();expect(effectState.type==='blindness','E01 resume due');
-  // 經實際 frame 路徑觸發，並確認暫停 frame 不推進效果或 gameTime。
-  flat();Math.random=()=>0;gameTime=0;resetEffects();playing=true;ready=true;gameTime=29.95;last=0;frame(100);
-  expect(effectState.type==='blindness'&&Math.abs(effectState.endsAt-gameTime-20)<1e-9,'E01 frame integration');
-  pause();const pausedTime=gameTime,pausedFrame=JSON.stringify(effectState);frame(200);
-  expect(gameTime===pausedTime&&JSON.stringify(effectState)===pausedFrame,'E01 pause frame freeze');
-  generate();expect(gameTime===0&&effectState.type===null&&effectState.endsAt===0&&effectState.nextAt===30,'E01 generate reset');
- } finally {Math.random=savedRandom;playing=false;}
+ try{
+  flat();playing=true;ready=true;gameTime=0;Math.random=()=>0;resetEffects();
+  expect(effectState.type===null&&effectState.nextAt===Infinity&&!effectState.armed,'R01 await first block');
+  gameTime=1000;updateEffects();expect(effectState.type===null,'R01 no mining no effect');
+  gameTime=7;armFirstEffect();expect(effectState.nextAt===17&&effectState.firstPending,'R01 first mining arm');
+  gameTime=8;armFirstEffect();expect(effectState.nextAt===17,'R01 no rearm');
+  gameTime=16.999;updateEffects();expect(effectState.type===null,'R01 no early first');
+  Math.random=()=>.99;gameTime=17;updateEffects();expect(effectState.type==='blindness'&&effectState.endsAt===77&&!effectState.firstPending,'R01 forced blind sixty');
+  expect(effectState.nextAt>=87&&effectState.nextAt<=117,'R01 next interval bounds');
+  gameTime=76.999;updateEffects();expect(effectState.type==='blindness','R01 full duration');
+  gameTime=77;updateEffects();expect(effectState.type===null,'R01 exact end');
+  const counts={blindness:0,speed:0,slowness:0,jumpBoost:0};for(let i=0;i<500;i++)counts[chooseEffect((i+.5)/500)]++;
+  expect(counts.blindness===200&&counts.speed===100&&counts.slowness===100&&counts.jumpBoost===100,'R01 weights');
+  for(const sample of [0,.5,.999999]){gameTime=0;resetEffects();armFirstEffect();Math.random=()=>sample;gameTime=10;updateEffects();expect(effectState.nextAt>=80&&effectState.nextAt<=110,'R01 delay bounds');}
+  const snapshot=JSON.stringify(effectState);playing=false;gameTime=1000;updateEffects();expect(JSON.stringify(effectState)===snapshot,'R01 pause');
+  playing=true;ready=false;updateEffects();expect(JSON.stringify(effectState)===snapshot,'R01 not ready');ready=true;
+  // 完成挖掘才啟動，開始/取消不算。
+  flat();gameTime=0;resetEffects();set(16,4,15,3);rebuild();camera.position.set(16.5,4.5,16.5);camera.rotation.set(0,0,0);held=true;
+  updateMining(1);expect(!effectState.armed,'R01 unfinished mine');resetDig();held=true;updateMining(3);expect(effectState.armed&&effectState.nextAt===10,'R01 completed mining');
+  gameTime=9.95;last=0;frame(100);expect(effectState.type==='blindness'&&Math.abs(effectState.endsAt-gameTime-60)<1e-9,'R01 frame');
+  pause();const time=gameTime,frozen=JSON.stringify(effectState);frame(200);expect(gameTime===time&&JSON.stringify(effectState)===frozen,'R01 pause frame');
+  generate();expect(effectState.nextAt===Infinity&&!effectState.armed,'R01 reset pending');
+ }finally{Math.random=savedRandom;playing=false;}
 }`,context);
-console.log('通過 E01：30～60 秒排程、20 秒狀態、四種抽選、無重複/堆疊、暫停與新世界重設；實際效果作用尚未實作。');
+console.log('通過 E01/R01：首次挖掘十秒、強制致盲、70～100 秒間隔、60 秒持續、40/20/20/20 權重及暫停。');
 
 // E02 以實際位移驗收倍率；不修改既有 G 與 E01 測試。
 vm.runInContext(`{
@@ -239,7 +230,7 @@ vm.runInContext(`{
  const savedRandom=Math.random;
  try{
   Math.random=()=>0;generate();expect(effectState.type===null,'E02 generation clears modifier');
-  flat();gameTime=0;resetEffects();Math.random=()=>.25;gameTime=29.95;playing=true;ready=true;keys.add('KeyW');last=0;
+  flat();gameTime=0;resetEffects();effectState.armed=true;effectState.firstPending=false;effectState.nextAt=30;Math.random=()=>.5;gameTime=29.95;playing=true;ready=true;keys.add('KeyW');last=0;
   const origin=player.z;frame(100);expect(effectState.type==='speed'&&Math.abs(origin-player.z-.645)<1e-9,'E02 scheduled frame movement');
   pause();const paused=player.z;frame(200);expect(player.z===paused,'E02 pause no motion');
  }finally{Math.random=savedRandom;playing=false;resetEffects();}
@@ -265,7 +256,7 @@ vm.runInContext(`{
  flat();effectState.type='jumpBoost';keys.add('Space');player.y=5;player.ground=false;player.vy=0;move(1/360);expect(player.vy<0,'E03 no air jump');
  const savedRandom=Math.random;
  try{
-  Math.random=()=>0;flat();gameTime=0;resetEffects();Math.random=()=>.75;gameTime=29.95;playing=true;ready=true;keys.add('Space');last=0;frame(100);
+  Math.random=()=>0;flat();gameTime=0;resetEffects();effectState.armed=true;effectState.firstPending=false;effectState.nextAt=30;Math.random=()=>.9;gameTime=29.95;playing=true;ready=true;keys.add('Space');last=0;frame(100);
   expect(effectState.type==='jumpBoost'&&player.vy>10,'E03 scheduled boost in same frame');
   pause();const y=player.y;frame(200);expect(player.y===y,'E03 pause vertical motion');
  }finally{Math.random=savedRandom;playing=false;resetEffects();}
@@ -302,7 +293,7 @@ vm.runInContext(`{
  effectState.type='blindness';effectState.endsAt=40;updateEffects();generate();expect(scene.background.getHex()===0xbfe0f4&&scene.fog.far===65&&blindnessUniform.value===0,'E04 new world restores');
  const savedRandom=Math.random;
  try{
-  Math.random=()=>0;flat();gameTime=0;resetEffects();gameTime=29.95;playing=true;ready=true;last=0;frame(100);
+  Math.random=()=>0;flat();gameTime=0;resetEffects();effectState.armed=true;effectState.firstPending=false;effectState.nextAt=30;gameTime=29.95;playing=true;ready=true;last=0;frame(100);
   expect(effectState.type==='blindness'&&scene.background.getHex()===0&&scene.fog.far===3,'E04 frame integration');
   expect(ray.far===5,'E04 interaction reach remains five');
  }finally{Math.random=savedRandom;playing=false;resetEffects();}
