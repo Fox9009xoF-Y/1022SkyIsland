@@ -365,3 +365,19 @@ vm.runInContext(`{
  generate();expect(scene.background.getHex()===0xbfe0f4,'N04 new day');
 }`,context);
 console.log('通過 N04：600 秒晝夜循環、色彩連續、致盲優先及恢復、保存時間與暫停。');
+
+vm.runInContext(`{
+ flat();resetEffects();playing=true;ready=true;yaw=.3;pitch=.1;updateCamera();const body=JSON.stringify(player),time=gameTime;
+ togglePhotoMode();expect(photoState.enabled&&photoState.flying,'N05 enter');
+ const initial=photoState.position.clone();keys.add('Space');movePhoto(.1);expect(photoState.position.y>initial.y,'N05 fly up');keys.clear();keys.add('ControlLeft');movePhoto(.2);expect(photoState.position.y<initial.y,'N05 fly down');
+ keys.clear();keys.add('KeyW');movePhoto(.2);expect(photoState.position.distanceTo(initial)>.1&&JSON.stringify(player)===body,'N05 separate body');
+ last=0;frame(100);expect(gameTime===time&&JSON.stringify(player)===body,'N05 frozen world');
+ photoState.position.set(16.5,10,16.5);keys.clear();handlePhotoKey({code:'Space',repeat:false,timeStamp:100,preventDefault(){}});handlePhotoKey({code:'Space',repeat:true,timeStamp:120,preventDefault(){}});expect(photoState.flying,'N05 repeat not double');
+ handlePhotoKey({code:'Space',repeat:false,timeStamp:250,preventDefault(){}});expect(!photoState.flying&&photoState.vy<0,'N05 double fall');
+ for(let i=0;i<240;i++)movePhoto(1/120);expect(Math.abs(photoState.position.y-5.62)<.001,'N05 land camera');
+ const snap=JSON.stringify(captureWorld());expect(snap.includes('sky-island'),'N05 capture body');
+ togglePhotoMode();expect(!photoState.enabled&&JSON.stringify(player)===body&&yaw===.3&&pitch===.1,'N05 exit restore');
+ handlePhotoKey({code:'KeyP',repeat:true,timeStamp:500,preventDefault(){}});expect(!photoState.enabled,'N05 held P ignored');
+ playing=false;
+}`,context);
+console.log('通過 N05：獨立拍照鏡頭、上下飛行、凍結世界、雙空白防 repeat、快速落地與退出還原。');
