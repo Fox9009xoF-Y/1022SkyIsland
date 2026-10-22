@@ -99,7 +99,7 @@ flowchart TD
   active -->|否| hide["隱藏瞄準方塊及裂痕，不推進遊戲時間"]
   active -->|是| look["updateLook dt：相容邊緣轉向"]
   look --> clock["updateHealthClock dt：gameTime、回血、提示與傷害遮罩"]
-  clock --> effects["E01 排程：updateEffects，尚未套用四種實際作用"]
+  clock --> effects["E01 排程：updateEffects；E02 加減速已接入，E03/E04 待實作"]
   effects --> enabled{"playing 且 ready？"}
   enabled -->|否| effectKeep["不改效果狀態"]
   enabled -->|是| expired{"當前效果到達 endsAt？"}
@@ -265,3 +265,6 @@ P01～P11 是依賴順序；旁邊的「每步修改完成」子流程適用於�
 ### E02 水平速度作用（TDD 本輪）
 
 排程維持 E01，move 在每個物理子步先選基礎速度，再依 effectState.type 套當次倍率；不直接覆寫永久速度。效果到期由 updateEffects 清除種類，因此下一個 move 自動回基礎速度。所有步行/蹲行/奔跑/方向都使用同一路徑，斜行正規化保持不變。跳躍速度與視野尚未接入 E03/E04；本步不宣稱四種效果都已完成。
+
+
+E02 本輪結果：紅燈提交 b37482d 後接入移動倍率，全部 G01～G14/E01/E02 通過；八張圖的數量及原有驗收範圍保留。最新進度為 E01/E02 完成，E03/E04 未完成。上方 E01 變更紀錄描述該步當時範圍，不能當作目前仍無加減速的宣告。

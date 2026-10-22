@@ -17,7 +17,7 @@ let ready = false, loadFailed = false, playing = false, wasLocked = false;
 let lookPointer = null;
 const TAU = Math.PI * 2;
 let gameTime = 0, nextRegenAt = Infinity, damageFlashUntil = 0, messageUntil = 0;
-// E01 只建立排程狀態；四種效果的實際作用由後續步驟分別實作。
+// E01 排程；E02 已接入水平加減速，其餘作用由後續步驟分別實作。
 const effectKinds = Object.freeze(['blindness','speed','slowness','jumpBoost']);
 const effectState = {type:null, endsAt:0, nextAt:Infinity};
 let lastSafe = {x:16.5, y:14, z:23.5};
@@ -289,7 +289,9 @@ function move(dt) {
   const forward=Number(keys.has('KeyW'))-Number(keys.has('KeyS')),side=Number(keys.has('KeyD'))-Number(keys.has('KeyA'));
   const len=Math.hypot(forward,side)||1;
   const sprint=!crouch&&keys.has('ShiftLeft')&&forward>0;
-  const speed=crouch?1.7:sprint?6.5:4.3;
+  const baseSpeed=crouch?1.7:sprint?6.5:4.3;
+  const speedMultiplier=effectState.type==='speed'?1.5:effectState.type==='slowness'?.5:1;
+  const speed=baseSpeed*speedMultiplier;
   const dx=(side*Math.cos(yaw)-forward*Math.sin(yaw))/len*speed*dt,dz=(-forward*Math.cos(yaw)-side*Math.sin(yaw))/len*speed*dt;
   for(const [axis,d] of [['x',dx],['z',dz]]) {
     const x=player.x+(axis==='x'?d:0),z=player.z+(axis==='z'?d:0);
