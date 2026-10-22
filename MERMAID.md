@@ -105,7 +105,10 @@ flowchart TD
   fps --> active{"playing 且 ready？"}
   active -->|否| hide["隱藏瞄準方塊及裂痕，不推進遊戲時間"]
   active -->|是| look["updateLook dt：相容邊緣轉向"]
-  look --> clock["updateHealthClock dt：gameTime、回血、提示與傷害遮罩"]
+  look --> photoBranch{"P16 拍照模式？"}
+  photoBranch -->|是| freeCamera["只移動獨立相機，凍結世界時計/生命/互動"]
+  freeCamera --> render
+  photoBranch -->|否| clock["updateHealthClock dt：gameTime、回血、提示與傷害遮罩"]
   clock --> effects["E01 排程 updateEffects，E04 同步視野；E02/E03 由 move 套用"]
   effects --> enabled{"playing 且 ready？"}
   enabled -->|否| effectKeep["不改效果狀態"]

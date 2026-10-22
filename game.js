@@ -61,6 +61,7 @@ function applyEffectVision() {
 }
 const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, .05, 90);
 camera.rotation.order = 'YXZ';
+const photoState={enabled:false,flying:true,position:new THREE.Vector3(),vy:0,lastSpaceAt:-Infinity,originalView:null};
 let renderer;
 try {
   renderer = new THREE.WebGLRenderer({canvas:$('#game'), antialias:false, powerPreference:'low-power'});
@@ -224,7 +225,7 @@ const SAVE_KEY='sky-island-worlds-v1';
 let saveSequence=0;
 function captureWorld() {
   return {schema:'sky-island',version:1,size:N,blocks:Array.from(world),bag:Array.from(inventory),
-    player:{...player},view:{yaw,pitch},time:gameTime,regenAt:Number.isFinite(nextRegenAt)?nextRegenAt:null,
+    player:{...player},view:photoState.enabled?{...photoState.originalView}:{yaw,pitch},time:gameTime,regenAt:Number.isFinite(nextRegenAt)?nextRegenAt:null,
     effect:{...effectState},drops:drops.map(d=>({...d})),lastSafe:{...lastSafe},selected};
 }
 function validateWorld(data) {
@@ -243,6 +244,7 @@ function validateWorld(data) {
 }
 function restoreWorld(input) {
   const data=validateWorld(input); // 驗證完成前不碰現有世界。
+  if(photoState.enabled)togglePhotoMode();
   pause();world.set(data.blocks);inventory.set(data.bag);Object.assign(player,data.player);
   yaw=data.view.yaw;pitch=data.view.pitch;gameTime=data.time;nextRegenAt=data.regenAt===null?Infinity:data.regenAt;
   Object.assign(effectState,data.effect);lastSafe={...data.lastSafe};selected=data.selected;
@@ -315,6 +317,7 @@ function updateEffects() {
   updateEffectLabel();
 }
 function generate() {
+  if(photoState.enabled)togglePhotoMode();
   world.fill(0); clearDrops(); inventory.fill(0); gameTime=0; nextRegenAt=Infinity;
   resetEffects();
   player.health=10; player.crouched=false;
@@ -395,6 +398,7 @@ function updateHealthClock(dt) {
   if(messageUntil&&gameTime>messageUntil) { $('#notice').textContent=''; messageUntil=0; }
 }
 function updateCamera() {
+  if(photoState.enabled){camera.position.copy(photoState.position);camera.rotation.set(pitch,yaw,0);return;}
   camera.position.set(player.x,player.y+(player.crouched?1.25:1.62),player.z);
   camera.rotation.set(pitch,yaw,0);
 }
@@ -468,6 +472,7 @@ for(let i=0;i<9;i++) {
   b.onclick=()=>select(i); $('#hotbar').append(b); slots.push(b);
 }
 function placementCell(t) {
+  if(photoState.enabled)return null;
   if(!t||t.distance>5||selected>=8||!inventory[selected+1]) return null;
   const x=t.x+t.n.x,y=t.y+t.n.y,z=t.z+t.n.z,h=player.crouched?1.45:1.8;
   if(!inside(x,y,z)||get(x,y,z)) return null;
@@ -485,6 +490,7 @@ function updateEffectLabel() {
   $('#effect-label').textContent=effectState.type&&seconds?labels[effectState.type]+' · '+seconds+' 秒':'';
 }
 function placeBlock(t) {
+  if(photoState.enabled)return false;
   if(!t||t.distance>5||selected>=8) return false;
   const type=selected+1;
   if(!inventory[type]) { notify('沒有'+names[type]+'，先挖掘並撿拾方塊。'); return false; }
@@ -495,6 +501,7 @@ function placeBlock(t) {
   inventory[type]--; rebuild(); updateInventory(); playBlockSound(type,'place'); return true;
 }
 function updateMining(dt) {
+  if(photoState.enabled){resetDig();outline.visible=false;return;}
   hit=target(); updatePlacementPreview(hit); outline.visible=!!hit; crack.visible=false;
   if(!hit) { $('#target').textContent=''; dig=0; digKey=''; return; }
   const type=get(hit.x,hit.y,hit.z), duration=breakTime[type];
@@ -544,10 +551,42 @@ document.addEventListener('pointerlockerror',showLookHint);
 window.addEventListener('keydown',e=>{
   if(active()&&['Space','ArrowUp','ArrowDown','ControlLeft','ShiftLeft'].includes(e.code)) e.preventDefault();
   if(e.code==='Escape') pause();
+  if(active()&&handlePhotoKey(e))return;
   if(active()) { keys.add(e.code); if(/^Digit[1-9]$/.test(e.code)) select(+e.code.slice(-1)-1); }
 });
 window.addEventListener('keyup',e=>keys.delete(e.code)); window.addEventListener('blur',pause);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});
+function togglePhotoMode() {
+  if(!photoState.enabled){
+    if(!active()||!ready)return false;updateCamera();photoState.position.copy(camera.position);
+    photoState.originalView={yaw,pitch};photoState.enabled=true;photoState.flying=true;photoState.vy=0;photoState.lastSpaceAt=-Infinity;
+    document.body.classList.add('photo-mode');
+  }else{photoState.enabled=false;yaw=photoState.originalView.yaw;pitch=photoState.originalView.pitch;document.body.classList.remove('photo-mode');}
+  keys.clear();resetDig();outline.visible=placementPreview.visible=false;updateCamera();return true;
+}
+function handlePhotoKey(e) {
+  if(e.code==='KeyP'){e.preventDefault();if(!e.repeat)togglePhotoMode();return true;}
+  if(!photoState.enabled)return false;
+  if(e.code==='KeyO'){e.preventDefault();if(!e.repeat&&typeof capturePhoto==='function')void capturePhoto();return true;}
+  if(e.code==='Space'&&!e.repeat){const time=Number.isFinite(e.timeStamp)?e.timeStamp:performance.now();if(time-photoState.lastSpaceAt<300){photoState.flying=false;photoState.vy=-12;keys.delete('Space');photoState.lastSpaceAt=-Infinity;return true;}photoState.lastSpaceAt=time;}
+  return false;
+}
+function movePhoto(dt) {
+  const forward=Number(keys.has('KeyW'))-Number(keys.has('KeyS')),side=Number(keys.has('KeyD'))-Number(keys.has('KeyA'));
+  const len=Math.hypot(forward,side)||1,speed=6;
+  photoState.position.x+=(side*Math.cos(yaw)-forward*Math.sin(yaw))/len*speed*dt;
+  photoState.position.z+=(-forward*Math.cos(yaw)-side*Math.sin(yaw))/len*speed*dt;
+  if(photoState.flying){photoState.position.y+=(Number(keys.has('Space'))-Number(keys.has('ControlLeft')))*speed*dt;}
+  else{
+    photoState.vy-=30*dt;const dy=photoState.vy*dt,steps=Math.max(1,Math.ceil(Math.abs(dy)/.08));
+    for(let i=0;i<steps;i++){const y=photoState.position.y+dy/steps,feet=y-1.62;
+      if(feet<.2){photoState.position.y=1.82;photoState.vy=0;break;}
+      if(get(Math.floor(photoState.position.x),Math.floor(feet),Math.floor(photoState.position.z))){photoState.position.y=Math.floor(feet)+2.62;photoState.vy=0;break;}
+      photoState.position.y=y;
+    }
+  }
+  updateCamera();
+}
 function rotateView(horizontal,vertical) {
   // 水平角度循環正規化，避免長時間旋轉累積誤差；只限制上下俯仰。
   if(Number.isFinite(horizontal)) yaw=((yaw-horizontal+Math.PI)%TAU+TAU)%TAU-Math.PI;
@@ -577,7 +616,7 @@ window.addEventListener('wheel',e=>{
 },{passive:false});
 $('#game').addEventListener('contextmenu',e=>e.preventDefault());
 $('#game').addEventListener('mousedown',e=>{
-  if(!active()) return;
+  if(!active()||photoState.enabled) return;
   if(e.button===0) held=true;
   if(e.button===2) { e.preventDefault(); placeBlock(target()); }
 });
@@ -614,10 +653,12 @@ function frame(now) {
   }
   if(active()&&ready) {
     updateLook(dt);
+    if(photoState.enabled){movePhoto(dt);}else{
     updateHealthClock(dt);
     updateEffects();
     for(let t=0;t<6;t++) move(dt/6);
     updateMining(dt); updateDrops(dt);
+    }
   } else { outline.visible=crack.visible=false; $('#target').textContent=''; }
   renderer.render(scene,camera);
 }
