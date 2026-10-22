@@ -1,0 +1,180 @@
+/* 純邏輯回歸檢查：使用真實 three.js 幾何，模擬 DOM 與繪圖器。 */
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const events={},elements=new Map(),checks=[];
+function element(){
+  const classes=new Set(),children=new Map();
+  return {textContent:'',disabled:false,innerHTML:'',attributes:{},
+    classList:{toggle(n,on){if(on===undefined)on=!classes.has(n);on?classes.add(n):classes.delete(n);},add(n){classes.add(n);},remove(n){classes.delete(n);},contains(n){return classes.has(n);}},
+    setAttribute(k,v){this.attributes[k]=v;},append(){},querySelector(s){if(!children.has(s))children.set(s,element());return children.get(s);},
+    addEventListener(n,fn){this['on'+n]=fn;}
+  };
+}
+const context={console,performance:{now:()=>0},innerWidth:1280,innerHeight:720,devicePixelRatio:1,requestAnimationFrame(){},
+  document:{body:element(),querySelector(s){if(!elements.has(s))elements.set(s,element());return elements.get(s);},createElement:element,addEventListener(n,fn){events[n]=fn;}},
+  window:{addEventListener(n,fn){events[n]=fn;}},setTimeout,clearTimeout};
+context.self=context;vm.createContext(context);
+vm.runInContext(fs.readFileSync(__dirname+'/vendor/three.min.js','utf8'),context);
+vm.runInContext(fs.readFileSync(__dirname+'/asset-data.js','utf8'),context);
+vm.runInContext(`
+THREE.WebGLRenderer=class{constructor(){this.info={render:{triangles:0}}}setPixelRatio(){}setSize(){}render(){}};
+THREE.TextureLoader=class{load(url){if(!url.startsWith('data:image/png;base64,'))throw Error('texture source');return new THREE.Texture();}};
+`,context);
+vm.runInContext(fs.readFileSync(__dirname+'/game.js','utf8'),context);
+function check(name,source){try{vm.runInContext(source,context);checks.push(name);console.log('通過 G'+String(checks.length).padStart(2,'0')+'：'+name);}catch(e){console.error('失敗：'+name);throw e;}}
+vm.runInContext(`
+function expect(value,message){if(!value)throw Error(message);}
+function flat(){
+ world.fill(0);clearDrops();inventory.fill(0);for(let z=0;z<N;z++)for(let x=0;x<N;x++)set(x,3,z,1);
+ Object.assign(player,{x:16.5,y:4,z:16.5,vy:0,ground:true,crouched:false,peakY:4,health:10});
+ gameTime=0;nextRegenAt=Infinity;lastSafe={x:16.5,y:4,z:16.5};yaw=0;pitch=0;lookPointer=null;keys.clear();resetDig();rebuild();updateCamera();
+}
+`,context);
+check('40 次隨機世界、地表與下層材質、隨機安全出生點',`
+for(let trial=0;trial<40;trial++){
+ generate();expect(world.length===32768,'size');
+ expect(!collides(player.x,player.y,player.z,1.8),'spawn collision');
+ expect(get(Math.floor(player.x),player.y-1,Math.floor(player.z)),'spawn support');
+ expect(player.health===10&&inventory.every(n=>n===0),'new game status');
+ for(let z=0;z<N;z++)for(let x=0;x<N;x++){
+  let top=-1;for(let y=0;y<N;y++){const b=get(x,y,z);expect(b<=8,'block type');if(b&&b!==4&&b!==5)top=y;}
+  if(top>=0){expect(get(x,top,z)===1,'grass surface');if(get(x,top-1,z))expect([3,7].includes(get(x,top-1,z)),'subsurface');
+   for(let y=top-2;y>=0;y--)expect([0,1,3,7].includes(get(x,y,z)),'deep types');}
+ }
+ for(let i=0;i<120;i++)move(1/120);expect(player.ground,'gravity');
+}
+`);
+check('六面三角形方向、五格射線距離與大量幾何合併',`
+for(const f of faces){const a=new THREE.Vector3(...f.v[0]),b=new THREE.Vector3(...f.v[1]),c=new THREE.Vector3(...f.v[2]);expect(b.sub(a).cross(c.sub(a)).dot(new THREE.Vector3(...f.n))>0,'winding');}
+flat();pitch=-Math.PI/2;camera.rotation.set(pitch,0,0);camera.position.set(16.5,9.001,16.5);expect(target()===null,'beyond five');
+camera.position.y=8.99;expect(target()&&target().distance<=5,'within five');expect(ray.far===5,'ray limit');
+// 棋盤狀世界產生大量外露面，確認不使用大型展開參數。
+world.fill(0);for(let y=0;y<N;y++)for(let z=0;z<N;z++)for(let x=0;x<N;x++)if((x+y+z)%2===0)set(x,y,z,3);rebuild();expect(terrain.geometry.getAttribute('position').count>500000,'large mesh');
+`);
+check('WASD、Ctrl 蹲下、Shift＋W 奔跑、跳躍、低頂起身防護',`
+flat();keys.add('KeyW');move(.1);const walk=16.5-player.z;
+flat();keys.add('KeyW');keys.add('ShiftLeft');move(.1);expect(16.5-player.z>walk,'sprint');expect(!player.crouched,'shift not crouch');
+flat();keys.add('KeyW');keys.add('ControlLeft');move(.1);expect(player.crouched&&16.5-player.z<walk,'crouch');
+flat();keys.add('KeyD');move(.1);expect(player.x>16.5,'D');keys.clear();keys.add('KeyA');move(.2);expect(player.x<16.5,'A');
+flat();keys.add('KeyS');move(.1);expect(player.z>16.5,'S');
+flat();keys.add('Space');move(1/120);expect(player.vy>0&&player.y>4&&!player.ground,'jump');
+flat();set(16,5,16,3);player.y=3.5;player.crouched=true;move(0);expect(player.crouched,'headroom');
+`);
+check('八種挖掘時間、裂痕進度與取消、完成後掉落而非直接入庫',`
+for(let type=1;type<=8;type++){
+ flat();set(16,4,15,type);rebuild();camera.position.set(16.5,4.5,16.5);camera.rotation.set(0,0,0);held=true;
+ updateMining(breakTime[type]-.01);expect(get(16,4,15)===type,'too early');expect(crack.visible,'crack');
+ updateMining(.01);expect(get(16,4,15)===0,'not broken');expect(drops.length===1&&drops[0].type===type&&drops[0].count===1,'drop');expect(inventory[type]===0,'no auto inventory');
+}
+expect(breakTime[5]===1.5&&breakTime[3]===3&&breakTime.slice(1).every(n=>n>=1.5&&n<=3),'durations');
+flat();set(16,4,15,3);rebuild();camera.position.set(16.5,4.5,16.5);camera.rotation.set(0,0,0);held=true;updateMining(1);resetDig();expect(!crack.visible&&dig===0,'cancel');held=true;updateMining(2.99);expect(get(16,4,15)===3,'restart');
+`);
+check('八方位一格撿拾、排除兩格與不同高度、物品數量守恆',`
+for(let dx=-1;dx<=1;dx++)for(let dz=-1;dz<=1;dz++){
+ flat();spawnDrop(3,2,16.5+dx,4.2,16.5+dz,0);updateDrops(0);expect(drops.length===0&&inventory[3]===2,'near pickup');
+}
+flat();spawnDrop(3,2,18.5,4.2,16.5,0);updateDrops(0);expect(drops.length===1&&inventory[3]===0,'too far');
+flat();spawnDrop(3,2,16.5,6.2,16.5,0);updateDrops(0);expect(drops.length===1,'vertical range');
+flat();spawnDrop(3,2,17.5,4.2,16.5,.35);updateDrops(0);expect(!inventory[3],'pickup delay');gameTime=.35;updateDrops(0);expect(inventory[3]===2,'pickup after delay');
+flat();spawnDrop(4,2,16.5,7.2,16.5,0);spawnDrop(4,3,16.5,7.2,16.5,0);expect(drops[0].count===5,'stack merge');for(let i=0;i<240;i++)updateDrops(1/120);expect(inventory[4]===5,'fall and pickup');
+`);
+check('放置扣一、零數量拒絕、玩家碰撞與世界邊界拒絕',`
+flat();select(0);const t={x:17,y:3,z:16,n:{x:0,y:1,z:0},distance:4};
+expect(!placeBlock(t)&&!get(17,4,16),'zero count');inventory[1]=2;expect(placeBlock(t)&&inventory[1]===1&&get(17,4,16)===1,'place decrement');
+expect(!placeBlock(t)&&inventory[1]===1,'occupied');
+expect(!placeBlock({x:16,y:3,z:16,n:{x:0,y:1,z:0},distance:1})&&!get(16,4,16)&&inventory[1]===1,'body collision');
+expect(!placeBlock({x:31,y:4,z:16,n:{x:1,y:0,z:0},distance:4})&&inventory[1]===1,'boundary');
+expect(!placeBlock({...t,x:18,distance:5.001})&&inventory[1]===1,'range');
+expect(placeBlock({...t,x:18,distance:5})&&inventory[1]===0,'five inclusive');
+select(8);expect(!placeBlock({...t,x:19}),'empty hand');select(9);expect(selected===0,'hotbar wrap');
+`);
+check('實際墜落：3 格不扣血、4 格扣 2、5 格扣 5、6 格扣 6',`
+for(const [height,remaining] of [[3,10],[4,8],[5,5],[6,4]]){
+ flat();player.y=4+height;player.peakY=player.y;player.ground=false;
+ for(let i=0;i<1000&&!player.ground;i++)move(1/120);
+ expect(player.ground&&player.y===4&&player.health===remaining,'fall '+height+' health '+player.health);
+}
+expect(fallDamage(10)===10,'lethal fall');
+`);
+check('20 秒等待與 1.5 秒回血、再次受傷重設計時、最多十顆心',`
+flat();damage(2);updateHealthClock(20);expect(player.health===8,'wait twenty');updateHealthClock(1.49);expect(player.health===8,'before first tick');updateHealthClock(.01);expect(player.health===9,'first tick');updateHealthClock(1.5);expect(player.health===10,'second tick');updateHealthClock(100);expect(player.health===10,'health cap');
+flat();damage(2);updateHealthClock(21);damage(1);updateHealthClock(.5);expect(player.health===7,'reset regen');updateHealthClock(21);expect(player.health===8,'regenerate after reset');
+expect($('#hearts').attributes['aria-label'].includes('8 / 10'),'hearts label');
+`);
+check('死亡清空背包、八方位兩格內散落、完整數量與安全隨機復活',`
+flat();for(let type=1;type<=8;type++)inventory[type]=type*3;
+const before={x:player.x,y:player.y,z:player.z};damage(10);
+expect(player.health===10&&inventory.every(n=>n===0),'death reset');expect(drops.length===8,'death stacks');
+for(const d of drops){expect(d.count===d.type*3,'death quantity');const dx=Math.abs(Math.floor(d.x)-Math.floor(before.x)),dz=Math.abs(Math.floor(d.z)-Math.floor(before.z));expect(Math.max(dx,dz)>=1&&Math.max(dx,dz)<=2,'scatter radius');expect((!dx||!dz||dx===dz),'eight directions');}
+expect(!collides(player.x,player.y,player.z,1.8)&&get(Math.floor(player.x),player.y-1,Math.floor(player.z)),'safe respawn');expect(player.x!==before.x||player.z!==before.z,'new location');
+flat();inventory[3]=7;player.y=-13;move(0);expect(player.health===10&&inventory[3]===0&&drops[0].count===7,'void death');
+world.fill(0);respawn();expect(get(Math.floor(player.x),player.y-1,Math.floor(player.z)),'empty world fallback');
+`);
+check('邊界死亡散落仍在八方位、掉落物超過初始批次容量',`
+flat();player.x=.5;player.z=.5;inventory[1]=20;damage(10);
+expect(drops.length===1&&drops[0].x>=.5&&drops[0].z>=.5,'edge bounds');
+expect(drops[0].x!==.5||drops[0].z!==.5,'not death cell');
+flat();for(let z=0;z<8;z++)for(let x=0;x<8;x++)spawnDrop(3,1,x+.5,6,z+.5,1);renderDrops();
+expect(dropBatches[3].count===64&&dropBatches[3].instanceMatrix.count>=64,'batch growth');
+`);
+check('水平可重複轉圈：鎖定、拒絕後邊緣持續旋轉、回中央停止、暫停停止',`
+flat();ready=true;document.pointerLockElement=null;$('#play').onclick();
+const turns=[];const original=rotateView;let accumulated=0;
+rotateView=(x,y)=>{accumulated+=x;original(x,y);};
+trackLook({clientX:innerWidth,clientY:300,movementX:0,movementY:0});
+for(let i=0;i<600;i++)updateLook(1/60);
+expect(accumulated>TAU*3,'fallback repeated full turns');expect(yaw>=-Math.PI&&yaw<Math.PI,'yaw normalized');
+const direction=new THREE.Vector3();updateCamera();camera.getWorldDirection(direction);expect(Number.isFinite(direction.x),'camera finite');
+trackLook({clientX:innerWidth/2,clientY:300});const stopYaw=yaw;
+for(let i=0;i<120;i++)updateLook(1/60);expect(Math.abs(yaw-stopYaw)<1e-12,'center stop');
+accumulated=0;trackLook({clientX:0,clientY:300});for(let i=0;i<600;i++)updateLook(1/60);expect(accumulated< -TAU*3,'left full turns');
+pause();const paused=yaw;updateLook(1);trackLook({movementX:100});expect(yaw===paused&&lookPointer===null,'pause clear');
+$('#play').onclick();document.pointerLockElement=$('#game');accumulated=0;
+for(let i=0;i<80;i++)trackLook({movementX:100,movementY:0});expect(accumulated>TAU*2,'locked full turns');
+const lockedYaw=yaw;lookPointer={x:innerWidth,y:300};updateLook(1);expect(yaw===lockedYaw,'no edge pan while locked');
+trackLook({movementX:0,movementY:100000});expect(pitch===-1.55,'pitch lower bound');trackLook({movementX:0,movementY:-100000});expect(pitch===1.55,'pitch upper bound');
+rotateView=original;document.pointerLockElement=null;pause();
+for(const request of [()=>{throw Error('denied');},()=>({catch(fn){fn();}})]){
+ $('#game').requestPointerLock=request;$('#play').onclick();yaw=0;trackLook({clientX:innerWidth,clientY:300});
+ const before=yaw;for(let i=0;i<120;i++)updateLook(1/60);expect(yaw!==before,'denied lock edge pan');pause();
+}
+yaw=0;pitch=0;rotateView(TAU,0);updateCamera();camera.getWorldDirection(direction);expect(Math.abs(direction.x)<1e-9&&Math.abs(direction.z+1)<1e-9,'full circle same heading');
+rotateView(Math.PI,0);updateCamera();camera.getWorldDirection(direction);expect(direction.z>.999,'half circle opposite');
+
+`);
+check('滑鼠鎖定不支援或拒絕時仍可進入、失焦暫停、載入失敗不誤啟用',`
+flat();manager.onLoad();expect(ready&&!$('#play').disabled,'load success');
+$('#play').onclick();expect(active(),'no lock API');pause();expect(!active()&&!held,'pause');
+$('#game').requestPointerLock=()=>{throw Error('unsupported');};$('#play').onclick();expect(active(),'throw fallback');pause();
+$('#game').requestPointerLock=()=>({catch(fn){fn();}});$('#play').onclick();expect(active(),'reject fallback');pause();
+$('#game').requestPointerLock=()=>{document.pointerLockElement=$('#game');};$('#play').onclick();
+`);
+events.pointerlockchange();context.document.pointerLockElement=null;events.pointerlockchange();
+check('解除滑鼠鎖定會暫停、錯誤材質保持停用',`
+expect(!active(),'unlock pause');manager.onError();manager.onLoad();expect(!ready&&$('#play').disabled,'failed load stays disabled');
+`);
+// 確認內嵌素材內容與原始檔案逐一相同。
+const map=context.window.BLOCK_TEXTURES;
+assert.equal(Object.keys(map).length,20);
+for(const [name,url] of Object.entries(map))assert.deepEqual(Buffer.from(url.split(',')[1],'base64'),fs.readFileSync(__dirname+'/sky-island-assets/sky-island-assets/textures/16px/'+name+'.png'));
+console.log('通過 G14：20 個內嵌 PNG 與原始素材逐位元組相同');
+// 文件覆蓋與本機入口路徑檢查；僅驗證 Mermaid 圍欄結構，不冒充 Mermaid 語法解析。
+const read=name=>fs.readFileSync(__dirname+'/'+name,'utf8');
+const verify=read('VERIFY.md'),plans=read('PLANS.md'),mermaid=read('MERMAID.md');
+const expected=Array.from({length:37},(_,i)=>'V'+String(i+1).padStart(2,'0'));
+const rows=[...verify.matchAll(/^\| (V\d{2}) \| (P\d{2}) \|/gm)];
+assert.deepEqual(rows.map(m=>m[1]),expected,'VERIFY 必須有完整且不重複的 V01～V37');
+const firstSteps=new Map();
+for(const section of plans.split(/^## (?=P\d{2})/m).slice(1)){
+ const step=section.match(/^P\d{2}/)[0];
+ const ids=section.match(/驗收編號：([^\n]+)/)[1].match(/V\d{2}/g);
+ for(const id of ids){assert(!firstSteps.has(id),'PLANS 重複 '+id);firstSteps.set(id,step);}
+}
+assert.deepEqual([...firstSteps.keys()].sort(),expected,'PLANS 必須覆蓋每個驗收項');
+for(const row of rows)assert.equal(firstSteps.get(row[1]),row[2],'首次步驟不一致 '+row[1]);
+assert.equal((mermaid.match(/^```mermaid$/gm)||[]).length,8,'預期八張流程圖');
+assert.equal((mermaid.match(/^```$/gm)||[]).length,8,'Mermaid 圍欄未閉合');
+const html=read('index.html');
+for(const src of [...html.matchAll(/(?:src|href)="([^"#]+)"/g)].map(m=>m[1]))assert(fs.existsSync(__dirname+'/'+src),'入口引用遺失 '+src);
+for(const name of ['AGENTS.md','BRIEF.md','README.md','VERIFICATION.md','vendor/THREE-LICENSE.txt','sky-island-assets/sky-island-assets/README.txt'])assert(fs.existsSync(__dirname+'/'+name),'缺少檔案 '+name);
+console.log('通過：V01～V37 與 P01～P11 一對一對照、入口本機引用、八張 Mermaid 圍欄結構。尚未驗證 Mermaid 渲染。');
+console.log(`完成 ${checks.length+1} 組功能檢查及文件靜態檢查。此結果不代表瀏覽器畫面、實際輸入、Mermaid 渲染或硬體 FPS 已驗證。`);
