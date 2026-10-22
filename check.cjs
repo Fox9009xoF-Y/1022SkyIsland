@@ -24,6 +24,7 @@ function check(name,source){try{vm.runInContext(source,context);checks.push(name
 vm.runInContext(`
 function expect(value,message){if(!value)throw Error(message);}
 function flat(){
+ if(typeof resetMonsters==='function')resetMonsters();
  world.fill(0);clearDrops();inventory.fill(0);for(let z=0;z<N;z++)for(let x=0;x<N;x++)set(x,3,z,1);
  Object.assign(player,{x:16.5,y:4,z:16.5,vy:0,ground:true,crouched:false,peakY:4,health:10});
  gameTime=0;nextRegenAt=Infinity;lastSafe={x:16.5,y:4,z:16.5};yaw=0;pitch=0;lookPointer=null;keys.clear();resetDig();rebuild();updateCamera();
@@ -380,6 +381,25 @@ vm.runInContext(`{
  const blocked=JSON.parse(JSON.stringify(base));blocked.blocks[at(16,4,16)]=3;const before=JSON.stringify(captureWorld());let failed=false;try{restoreWorld(blocked);}catch{failed=true;}expect(failed&&JSON.stringify(captureWorld())===before,'N07 reject body inside blocks');
 }`,context);
 console.log('通過 N07：存檔白名單欄位與實心方塊內出生拒絕，失敗不局部套用。');
+
+vm.runInContext(`{
+ flat();playing=true;ready=true;resetEffects();effectState.type='blindness';effectState.endsAt=60;updateEffects();
+ expect(monsters.length===5&&monsterMesh.count===10,'R02 five two-block logs');
+ expect(monsterMesh.material.every(m=>m.map===materials[tile(4,0)].map||m.map===materials[tile(4,2)].map),'R02 original log textures');
+ updateEffects();expect(monsters.length===5,'R02 no duplicate spawn');
+ for(let i=0;i<5;i++){Object.assign(monsters[i],{x:i===0?16.5:i+.5,y:4,z:i===0?26.5:.5,nextAttackAt:1e9});}
+ const start=monsters[0].z;for(let i=0;i<120;i++)updateMonsters(1/120);expect(Math.abs(start-monsters[0].z-4.73)<1e-6,'R02 constant speed');
+ const measure=()=>{Object.assign(monsters[0],{x:16.5,y:4,z:26.5});const z=monsters[0].z;updateMonsters(.1);return z-monsters[0].z;};
+ effectState.type='speed';keys.add('ShiftLeft');keys.add('KeyW');const fast=measure();effectState.type='slowness';const slow=measure();expect(Math.abs(fast-.473)<1e-6&&Math.abs(slow-.473)<1e-6,'R02 ignore player modifiers');keys.clear();
+ // 二格高牆不可穿越，但可沿合法地面繞行。
+ for(let x=14;x<=18;x++){set(x,4,22,3);set(x,5,22,3);}rebuild();Object.assign(monsters[0],{x:16.5,y:4,z:24.5});
+ for(let i=0;i<600;i++){updateMonsters(1/120);expect(!collides(monsters[0].x,monsters[0].y,monsters[0].z,2),'R02 wall collision');}
+ expect(Math.hypot(monsters[0].x-player.x,monsters[0].z-player.z)<8,'R02 routes around wall');
+ effectState.type='blindness';effectState.endsAt=60;gameTime=60;updateEffects();expect(monsters.length===5,'R02 persists after blindness');
+ gameTime=69.999;updateMonsters(0);expect(monsters.length===5,'R02 ten second grace');pause();gameTime=70;updateMonsters(0);expect(monsters.length===5,'R02 pause freezes');playing=true;updateMonsters(0);expect(monsters.length===0&&monsterMesh.count===0,'R02 exact disappear');
+ generate();expect(monsters.length===0,'R02 new world clear');playing=false;
+}`,context);
+console.log('通過 R02：五隻兩格原木、固定 4.73 速度、地面繞障、不重複、十秒消失及暫停。');
 
 const photoChecks=vm.runInContext(`(async()=>{
  flat();playing=true;ready=true;
