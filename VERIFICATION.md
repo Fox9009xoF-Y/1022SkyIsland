@@ -1,3 +1,5 @@
+> 本輪進行中：E01 排程 TDD。以下既有報告保留作歷史，不代表本輪驗收結果；最新紀錄位於檔案末端。VERIFY.md 未獲修改授權，保持原始內容。
+
 # VERIFICATION.md：本輪實際驗證結果
 
 本輪日期：2026-10-22（Asia/Taipei）。本報告對應更新後的 VERIFY.md V01～V37，不沿用前一輪空白 VERIFY 的通過紀錄。
@@ -114,3 +116,13 @@ three.js 既有版本會輸出 classic build deprecated 訊息；這是函式庫
 | PLANS.md | `4cd164da5048d7a3a5eaeaa04851959fbaef51c1b4b88041f351ca29330b1eec` |
 | VERIFY.md | `9550b97086419afe052508ae1bec819586b80041ee2f2043b686957d20725910` |
 | MERMAID.md | `6470aa81c59608e74790c60e7fb8da3ca51fc7e68f4ad92256be91137f3a3012` |
+
+
+## E01 紅燈紀錄
+
+- 已在 mcgame 設定使用者提供的本機 Git 身分，沒有修改全域或設定遠端。
+- 基準提交 d4dd5ae；14 組既有功能測試與文件檢查通過。
+- 先新增 E01 補充測試，未修改 game.js；node --check check.cjs 通過。
+- node check.cjs：既有 G01～G14、文件對照仍通過，接著 E01 因 resetEffects 尚未定義出現 ReferenceError，程序結束碼 1，符合測試先紅燈。
+- 紅燈提交後才准許實作排程。此步不包含四種效果的實際視覺/移動/跳躍作用。
+- VERIFY.md SHA-256 保持 9550b97086419afe052508ae1bec819586b80041ee2f2043b686957d20725910。

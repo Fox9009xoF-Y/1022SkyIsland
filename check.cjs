@@ -178,3 +178,41 @@ for(const src of [...html.matchAll(/(?:src|href)="([^"#]+)"/g)].map(m=>m[1]))ass
 for(const name of ['AGENTS.md','BRIEF.md','README.md','VERIFICATION.md','vendor/THREE-LICENSE.txt','sky-island-assets/sky-island-assets/README.txt'])assert(fs.existsSync(__dirname+'/'+name),'缺少檔案 '+name);
 console.log('通過：V01～V37 與 P01～P11 一對一對照、入口本機引用、八張 Mermaid 圍欄結構。尚未驗證 Mermaid 渲染。');
 console.log(`完成 ${checks.length+1} 組功能檢查及文件靜態檢查。此結果不代表瀏覽器畫面、實際輸入、Mermaid 渲染或硬體 FPS 已驗證。`);
+
+// E01 為 BRIEF 新增排程需求的補充測試；不改動既有 G01～G14 或唯讀 VERIFY。
+vm.runInContext(`{
+ const savedRandom=Math.random;
+ try {
+  playing=true;ready=true;gameTime=0;Math.random=()=>0;
+  resetEffects();expect(effectState.type===null&&effectState.endsAt===0,'E01 initial empty');
+  expect(effectState.nextAt===30,'E01 minimum wait');
+  for(const sample of [0,.5,.999999]){
+   Math.random=()=>sample;gameTime=7;resetEffects();
+   expect(effectState.nextAt>=37&&effectState.nextAt<=67,'E01 wait bounds');
+  }
+  Math.random=()=>0;gameTime=0;resetEffects();
+  gameTime=29.999;updateEffects();expect(effectState.type===null,'E01 no early start');
+  gameTime=30;updateEffects();expect(effectState.type==='blindness'&&effectState.endsAt===50&&effectState.nextAt===60,'E01 first start');
+  gameTime=49.999;updateEffects();expect(effectState.type==='blindness','E01 no early end');
+  gameTime=50;updateEffects();expect(effectState.type===null&&effectState.endsAt===0&&effectState.nextAt===60,'E01 exact end');
+  gameTime=59.999;updateEffects();expect(effectState.type===null,'E01 inactive gap');
+  gameTime=60;updateEffects();expect(effectState.type==='blindness'&&effectState.endsAt===80,'E01 next cycle');
+  const kinds=['blindness','speed','slowness','jumpBoost'];
+  for(let i=0;i<4;i++){
+   gameTime=0;Math.random=()=>0;resetEffects();Math.random=()=>i/4;gameTime=30;updateEffects();
+   expect(effectState.type===kinds[i],'E01 kind '+i);
+   const snapshot=JSON.stringify(effectState);Math.random=()=>.999999;updateEffects();expect(JSON.stringify(effectState)===snapshot,'E01 no redraw or extension');
+  }
+  Math.random=()=>0;gameTime=0;resetEffects();gameTime=30;playing=false;
+  const paused=JSON.stringify(effectState);updateEffects();expect(JSON.stringify(effectState)===paused,'E01 paused scheduler');
+  playing=true;ready=false;updateEffects();expect(JSON.stringify(effectState)===paused,'E01 not ready scheduler');
+  ready=true;updateEffects();expect(effectState.type==='blindness','E01 resume due');
+  // 經實際 frame 路徑觸發，並確認暫停 frame 不推進效果或 gameTime。
+  flat();Math.random=()=>0;gameTime=0;resetEffects();playing=true;ready=true;gameTime=29.95;last=0;frame(100);
+  expect(effectState.type==='blindness'&&Math.abs(effectState.endsAt-gameTime-20)<1e-9,'E01 frame integration');
+  pause();const pausedTime=gameTime,pausedFrame=JSON.stringify(effectState);frame(200);
+  expect(gameTime===pausedTime&&JSON.stringify(effectState)===pausedFrame,'E01 pause frame freeze');
+  generate();expect(gameTime===0&&effectState.type===null&&effectState.endsAt===0&&effectState.nextAt===30,'E01 generate reset');
+ } finally {Math.random=savedRandom;playing=false;}
+}`,context);
+console.log('通過 E01：30～60 秒排程、20 秒狀態、四種抽選、無重複/堆疊、暫停與新世界重設；實際效果作用尚未實作。');

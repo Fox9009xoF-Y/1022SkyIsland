@@ -99,7 +99,17 @@ flowchart TD
   active -->|否| hide["隱藏瞄準方塊及裂痕，不推進遊戲時間"]
   active -->|是| look["updateLook dt：相容邊緣轉向"]
   look --> clock["updateHealthClock dt：gameTime、回血、提示與傷害遮罩"]
-  clock --> six["六次 move dt/6 子步"]
+  clock --> effects["E01 排程：updateEffects，尚未套用四種實際作用"]
+  effects --> enabled{"playing 且 ready？"}
+  enabled -->|否| effectKeep["不改效果狀態"]
+  enabled -->|是| expired{"當前效果到達 endsAt？"}
+  expired -->|是| effectClear["清除種類與 endsAt"]
+  expired -->|否| effectDue{"gameTime 到達 nextAt？"}
+  effectClear --> effectDue
+  effectDue -->|否| effectKeep
+  effectDue -->|是| effectStart["隨機一種，持續 20 秒；從現在重排 30 至 60 秒"]
+  effectStart --> six["六次 move dt/6 子步"]
+  effectKeep --> six
   six --> input["讀 keys，決定蹲姿、步行或奔跑速度"]
   input --> horizontal["依 yaw 移動，檢查碰撞與蹲姿邊緣保護"]
   horizontal --> vertical["地面起跳、重力、小段垂直位移與碰撞"]
@@ -242,3 +252,10 @@ flowchart TD
 ```
 
 P01～P11 是依賴順序；旁邊的「每步修改完成」子流程適用於每一個 P 步驟。後段修正不得只測局部，必須使先前結果失效並從 P01 重驗所有已完成內容。手動或目標硬體證據不能由邏輯測試代替。
+
+
+### 隨機效果 E01 變更紀錄
+
+本輪先完成排程狀態：effectState 包含 type、endsAt、nextAt，generate 呼叫 resetEffects；frame 在 updateHealthClock 後、move 前呼叫 updateEffects。上方第 4 圖納入到期與觸發分支。進入新世界重抽首次 30～60 秒，依遊戲時間計算且暫停不前進；不變更實際移動、跳躍及霧效果。
+
+未完成：E02 加速/減速倍率、E03 跳躍多三格、E04 三格內漸層與三格外全黑。這些都必須各自先紅燈提交、實作、全套前段重驗，再綠燈提交，完成一步就停止。架構文件同步不代表獲得修改 VERIFY.md 的授權。
