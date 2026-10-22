@@ -25,6 +25,7 @@ vm.runInContext(`
 function expect(value,message){if(!value)throw Error(message);}
 function flat(){
  if(typeof resetMonsters==='function')resetMonsters();
+ if(typeof resetCombat==='function')resetCombat();
  world.fill(0);clearDrops();inventory.fill(0);for(let z=0;z<N;z++)for(let x=0;x<N;x++)set(x,3,z,1);
  Object.assign(player,{x:16.5,y:4,z:16.5,vy:0,ground:true,crouched:false,peakY:4,health:10});
  gameTime=0;nextRegenAt=Infinity;lastSafe={x:16.5,y:4,z:16.5};yaw=0;pitch=0;lookPointer=null;keys.clear();resetDig();rebuild();updateCamera();
@@ -400,6 +401,24 @@ vm.runInContext(`{
  generate();expect(monsters.length===0,'R02 new world clear');playing=false;
 }`,context);
 console.log('通過 R02：五隻兩格原木、固定 4.73 速度、地面繞障、不重複、十秒消失及暫停。');
+
+vm.runInContext(`{
+ const mob=(id,x=18.5)=>({id,x,y:4,z:16.5,placed:true,nextAttackAt:0});
+ flat();playing=true;ready=true;const a=mob(1);expect(receiveMonsterHit(a)&&player.health===9,'R03 two block hit');
+ expect(!receiveMonsterHit(a)&&player.health===9,'R03 one per second');gameTime=.999;expect(!receiveMonsterHit(a),'R03 cooldown boundary');
+ gameTime=1;expect(receiveMonsterHit(a)&&player.health===8&&combatState.invincibleUntil===0,'R03 same monster no pair');
+ flat();playing=true;ready=true;const b=mob(2),c=mob(3),d=mob(4);expect(receiveMonsterHit(mob(1))&&receiveMonsterHit(b)&&player.health===8&&combatState.invincibleUntil===1,'R03 second distinct starts invincibility');
+ const regen=nextRegenAt;expect(!receiveMonsterHit(c)&&!damage(2)&&player.health===8&&nextRegenAt===regen,'R03 immune no regen reset');
+ gameTime=.999;expect(!receiveMonsterHit(d)&&player.health===8,'R03 full invincibility');
+ gameTime=1;expect(receiveMonsterHit(d)&&player.health===7,'R03 exact end');expect(receiveMonsterHit(b)&&player.health===6&&combatState.invincibleUntil===2,'R03 new pair after expiry');
+ flat();playing=true;ready=true;expect(!receiveMonsterHit(mob(1,18.5001))&&player.health===10,'R03 outside range');
+ set(17,4,16,3);set(17,5,16,3);expect(!receiveMonsterHit(mob(1)),'R03 wall blocks attack');
+ playing=false;expect(!receiveMonsterHit(mob(2)),'R03 paused');
+ flat();playing=true;ready=true;player.health=1;inventory[3]=4;for(let i=1;i<=5;i++)monsters.push(mob(i));const life=playerLife;
+ updateMonsters(0);expect(playerLife===life+1&&player.health===10&&inventory[3]===0&&combatState.invincibleUntil===0,'R03 death stops attacks and resets');
+ playing=false;
+}`,context);
+console.log('通過 R03：兩格/每怪每秒、一秒兩不同怪保護、精確到期、傷害與回血、障礙/暫停及死亡中止。');
 
 const photoChecks=vm.runInContext(`(async()=>{
  flat();playing=true;ready=true;
