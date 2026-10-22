@@ -381,3 +381,27 @@ vm.runInContext(`{
  playing=false;
 }`,context);
 console.log('通過 N05：獨立拍照鏡頭、上下飛行、凍結世界、雙空白防 repeat、快速落地與退出還原。');
+
+const photoChecks=vm.runInContext(`(async()=>{
+ flat();playing=true;ready=true;
+ expect(await capturePhoto()===false,'N06 mode guard');togglePhotoMode();
+ const oldDownload=downloadBlob,oldPicker=window.showDirectoryPicker,oldBlob=$('#game').toBlob;
+ let downloads=0,picks=0,created=0;const files=[],written=[];
+ const folder={name:'photosave',async getFileHandle(name){
+   files.push(name);
+   return {async createWritable(){return {async write(blob){written.push(blob);},async close(){}};}};
+ }};
+ try{
+  downloadBlob=()=>{downloads++;};$('#game').toBlob=cb=>cb({type:'image/png'});
+  window.showDirectoryPicker=async()=>{picks++;return {name:'mcgame',async getDirectoryHandle(name,options){expect(name==='photosave'&&options.create,'N06 folder create');created++;return folder;}};};
+  photoDirectory=null;
+  const first=await capturePhoto(),second=await capturePhoto();expect(first.method==='folder'&&second.method==='folder'&&picks===1&&created===1&&written.length===2&&files[0]!==files[1],'N06 folder reuse and unique');
+  photoDirectory=null;window.showDirectoryPicker=async()=>folder;expect((await capturePhoto()).method==='folder'&&created===1,'N06 no nested photosave');
+  photoDirectory=null;window.showDirectoryPicker=async()=>{const e=new Error('cancel');e.name='AbortError';throw e;};expect((await capturePhoto()).method==='cancelled'&&downloads===0,'N06 cancel no download');
+  window.showDirectoryPicker=undefined;photoDirectory=null;expect((await capturePhoto()).method==='download'&&downloads===1,'N06 unsupported fallback');
+  photoDirectory={name:'photosave',async getFileHandle(){throw Error('write denied');}};expect((await capturePhoto()).method==='download'&&downloads===2,'N06 write fallback');
+  photoDirectory=null;let finish;$('#game').toBlob=cb=>{finish=cb;};const pending=capturePhoto();expect(await capturePhoto()===false,'N06 concurrent guard');await Promise.resolve();await Promise.resolve();expect(typeof finish==='function','N06 snapshot scheduled');finish({type:'image/png'});await pending;expect(!photoCaptureBusy,'N06 busy reset');
+  $('#game').toBlob=cb=>cb(null);expect(await capturePhoto()===false&&!photoCaptureBusy,'N06 null blob cleanup');
+ }finally{downloadBlob=oldDownload;window.showDirectoryPicker=oldPicker;$('#game').toBlob=oldBlob;photoDirectory=null;if(photoState.enabled)togglePhotoMode();playing=false;}
+})()`,context);
+photoChecks.then(()=>console.log('通過 N06：PNG 模式/並行保護、photosave 授權復用、不多套目錄、取消、下載相容及失敗清理。')).catch(e=>{console.error(e);process.exitCode=1;});
