@@ -44,11 +44,18 @@ function installBlindnessFog(material) {
   };
   material.customProgramCacheKey=()=> 'sky-island-radial-fog-v1';
 }
+const skyPalette=[[0,0xbfe0f4],[120,0xbfe0f4],[180,0xc5756a],[240,0x101c35],[420,0x101c35],[510,0xdba79b],[600,0xbfe0f4]].map(([t,c])=>({t,color:new THREE.Color(c)}));
+const currentSky=new THREE.Color();
+function skyColorAt(time,out=new THREE.Color()) {
+  const t=((time%600)+600)%600;
+  for(let i=1;i<skyPalette.length;i++)if(t<=skyPalette[i].t){const a=skyPalette[i-1],b=skyPalette[i],u=(t-a.t)/(b.t-a.t);return out.copy(a.color).lerp(b.color,u*u*(3-2*u));}
+  return out.copy(skyPalette[0].color);
+}
 function applyEffectVision() {
   const blind=effectState.type==='blindness';
   blindnessUniform.value=blind?1:0;
-  scene.background.set(blind?0:0xbfe0f4);
-  scene.fog.color.set(blind?0:0xbfe0f4);
+  skyColorAt(gameTime,currentSky);
+  if(blind){scene.background.set(0);scene.fog.color.set(0);}else{scene.background.copy(currentSky);scene.fog.color.copy(currentSky);}
   scene.fog.near=blind?0:30;
   scene.fog.far=blind?3:65;
 }

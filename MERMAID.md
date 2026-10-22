@@ -117,7 +117,8 @@ flowchart TD
   effectDue -->|是| effectStart["隨機一種，持續 20 秒；從現在重排 30 至 60 秒"]
   effectStart --> vision["E04：blindness 使用黑背景與半徑三格漸層；其餘恢復正常霧"]
   effectKeep --> vision
-  vision --> six["六次 move dt/6 子步"]
+  vision --> skyTime["P15：非致盲時按 gameTime/600 循環日間、夕陽、夜間與黎明"]
+  skyTime --> six["六次 move dt/6 子步"]
   six --> input["讀 keys，決定蹲姿、步行或奔跑速度"]
   input --> multiplier["E02：speed 乘 1.5、slowness 乘 0.5、其餘乘 1；不改基礎速度"]
   multiplier --> horizontal["依 yaw 移動，檢查碰撞與蹲姿邊緣保護"]
