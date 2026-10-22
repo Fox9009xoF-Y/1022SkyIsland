@@ -17,7 +17,7 @@ let ready = false, loadFailed = false, playing = false, wasLocked = false;
 let lookPointer = null;
 const TAU = Math.PI * 2;
 let gameTime = 0, nextRegenAt = Infinity, damageFlashUntil = 0, messageUntil = 0;
-// E01 排程；E02 已接入水平加減速，其餘作用由後續步驟分別實作。
+// E01 排程、E02 水平加減速、E03 跳高；致盲由 E04 接入。
 const effectKinds = Object.freeze(['blindness','speed','slowness','jumpBoost']);
 const effectState = {type:null, endsAt:0, nextAt:Infinity};
 let lastSafe = {x:16.5, y:14, z:23.5};
@@ -297,7 +297,11 @@ function move(dt) {
     const x=player.x+(axis==='x'?d:0),z=player.z+(axis==='z'?d:0);
     if(!collides(x,player.y,z,h)&&!(crouch&&player.ground&&!collides(x,player.y-.12,z,h))) player[axis]+=d;
   }
-  if(keys.has('Space')&&player.ground&&!crouch) { player.vy=7; player.ground=false; player.peakY=player.y; }
+  if(keys.has('Space')&&player.ground&&!crouch) {
+    // 在相同重力下，額外三格高度需要增加動能，不是將初速加三。
+    player.vy=effectState.type==='jumpBoost'?Math.sqrt(7*7+2*20*3):7;
+    player.ground=false; player.peakY=player.y;
+  }
   player.vy-=20*dt;
   const dy=player.vy*dt,steps=Math.max(1,Math.ceil(Math.abs(dy)/.08));
   player.ground=false;
