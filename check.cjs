@@ -420,6 +420,33 @@ vm.runInContext(`{
 }`,context);
 console.log('通過 R03：兩格/每怪每秒、一秒兩不同怪保護、精確到期、傷害與回血、障礙/暫停及死亡中止。');
 
+vm.runInContext(`{
+ flat();resetEffects();const pending=captureWorld();expect(pending.version===2&&pending.effect.nextAt===null&&pending.encounter.monsters.length===0,'R04 pending schema');
+ generate();restoreWorld(pending);expect(!effectState.armed&&effectState.nextAt===Infinity,'R04 pending restore');
+ gameTime=5;armFirstEffect();const waiting=captureWorld();restoreWorld(waiting);expect(effectState.nextAt===15&&effectState.firstPending,'R04 first countdown restore');
+ playing=true;ready=true;gameTime=15;updateEffects();expect(monsters.length===5,'R04 first after load');
+ Object.assign(monsters[0],{x:18.5,y:4,z:16.5,nextAttackAt:0});Object.assign(monsters[1],{x:14.5,y:4,z:16.5,nextAttackAt:0});
+ receiveMonsterHit(monsters[0]);receiveMonsterHit(monsters[1]);const live=JSON.parse(JSON.stringify(captureWorld()));
+ inventory[1]=1;select(0);expect(!placeBlock({x:18,y:3,z:16,n:{x:0,y:1,z:0},distance:2})&&inventory[1]===1,'R04 cannot place inside monster');
+ generate();restoreWorld(live);expect(monsters.length===5&&combatState.invincibleUntil===16&&player.health===8&&monsters[0].nextAttackAt===16,'R04 live combat restore');
+ playing=true;gameTime=15.5;expect(!damage(3)&&player.health===8,'R04 saved invincibility');
+ gameTime=75;updateEffects();const grace=captureWorld();restoreWorld(grace);expect(monsters.length===5&&monstersDespawnAt===85,'R04 grace restore');
+ playing=true;gameTime=85;updateMonsters(0);expect(monsters.length===0,'R04 loaded grace expiration');
+ const base=captureWorld();for(const mutate of [s=>s.encounter.monsters=[...live.encounter.monsters,live.encounter.monsters[0]],s=>s.combat.invincibleUntil=NaN,s=>s.encounter.despawnAt=-1,s=>{s.effect.armed=true;s.effect.nextAt=null;}]){
+  const bad=JSON.parse(JSON.stringify(base));mutate(bad);const before=JSON.stringify(captureWorld());let failed=false;try{restoreWorld(bad);}catch{failed=true;}expect(failed&&JSON.stringify(captureWorld())===before,'R04 reject encounter atomically');
+ }
+ const legacy=JSON.parse(JSON.stringify(base));legacy.version=1;delete legacy.encounter;delete legacy.combat;delete legacy.effect.armed;delete legacy.effect.firstPending;legacy.effect.type='speed';legacy.effect.endsAt=legacy.time+10;legacy.effect.nextAt=legacy.time+20;
+ restoreWorld(legacy);expect(effectState.endsAt===gameTime+60&&effectState.nextAt===gameTime+70&&effectState.armed&&!effectState.firstPending&&combatState.invincibleUntil===0,'R04 v1 migration');
+ // 腳下地面被挖後，怪物應落到下面地面，不可懸浮。
+ flat();playing=true;ready=true;spawnMonsters();monsters.forEach(m=>m.nextAttackAt=1e9);Object.assign(monsters[0],{x:16.5,y:8,z:20.5});set(16,7,20,3);rebuild();set(16,7,20,0);rebuild();updateMonsters(.1);expect(monsters[0].y<8,'R04 unsupported falls');
+ for(let i=0;i<240;i++)updateMonsters(1/120);expect(monsters[0].y===4,'R04 falling lands');
+ // 沒有安全位置時不造地；之後有地面會重試五個槽位，極小地面允許共用合法位置。
+ resetMonsters();world.fill(0);rebuild();spawnMonsters();expect(monsters.length===5&&monsters.every(m=>!m.placed),'R04 no fabricated ground');
+ set(16,3,16,1);rebuild();player.x=16.5;player.y=4;player.z=16.5;updateMonsters(0);expect(monsters.every(m=>m.placed)&&monsterMesh.count===10,'R04 retry spawn');
+ resetEffects();resetCombat();playing=false;
+}`,context);
+console.log('通過 R04：v2 首次/倒數/怪與無敵保存、v1 遷移、壞檔原子拒絕、失去支撐落地及安全位置重試。');
+
 const photoChecks=vm.runInContext(`(async()=>{
  flat();playing=true;ready=true;
  expect(await capturePhoto()===false,'N06 mode guard');togglePhotoMode();
