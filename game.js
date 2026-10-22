@@ -23,6 +23,7 @@ const effectState = {type:null, endsAt:0, nextAt:Infinity,armed:false,firstPendi
 let photoDirectory=null,photoCaptureBusy=false,photoSequence=0;
 let audioContext=null,audioMuted=false,footstepDistance=0,lastDigSoundAt=-Infinity;
 let worldRevision=0;
+const combatState={invincibleUntil:0,lastHits:[]};let playerLife=0;
 const monsters=[];const MONSTER_SPEED=4.3*1.1;
 let monstersDespawnAt=0,monstersWereBlind=false,monsterNav=null;
 let lastSafe = {x:16.5, y:14, z:23.5};
@@ -210,6 +211,7 @@ function updateMonsters(dt){
   if(!active()||!ready||photoState.enabled)return;
   if(monstersDespawnAt&&gameTime>=monstersDespawnAt){resetMonsters();return;}
   if(!monsters.length)return;const nav=monsterNavigation();
+  const life=playerLife;
   for(const m of monsters){if(!m.placed)continue;let budget=MONSTER_SPEED*dt,iterations=0;
     while(budget>1e-8&&iterations++<100){
       if(Math.hypot(m.x-player.x,m.z-player.z)<=1.2)break;
@@ -220,6 +222,7 @@ function updateMonsters(dt){
       let nextY=null;for(const y of [m.y,m.y+1,m.y-1])if(!collides(x,y,z,2)&&monsterSupported(x,y,z)){nextY=y;break;}
       if(nextY===null){m.goal=null;break;}m.x=x;m.y=nextY;m.z=z;budget-=step;if(step>=d-1e-8)m.goal=null;
     }
+    receiveMonsterHit(m);if(playerLife!==life)break;
   }
   renderMonsters();
 }
@@ -366,6 +369,19 @@ function playBlockSound(type,action) {
     osc.connect(gain);gain.connect(audioContext.destination);osc.start(now);osc.stop(now+p.duration);osc.onended=()=>{osc.disconnect();gain.disconnect();};return true;
   }catch{return false;}
 }
+function resetCombat(){combatState.invincibleUntil=0;combatState.lastHits=[];}
+function receiveMonsterHit(m) {
+  if(!active()||!ready||photoState.enabled||!m.placed)return false;
+  if(combatState.invincibleUntil>0&&gameTime>=combatState.invincibleUntil)resetCombat();
+  if(gameTime<combatState.invincibleUntil||gameTime<m.nextAttackAt||Math.hypot(m.x-player.x,m.y-player.y,m.z-player.z)>2)return false;
+  const distance=Math.hypot(m.x-player.x,m.z-player.z),steps=Math.max(1,Math.ceil(distance/.2));
+  for(let i=1;i<steps;i++){const t=i/steps;if(get(Math.floor(m.x+(player.x-m.x)*t),Math.floor(m.y+1+(player.y-m.y)*t),Math.floor(m.z+(player.z-m.z)*t)))return false;}
+  m.nextAttackAt=gameTime+1;const life=playerLife;if(!damage(1,'monster'))return false;if(playerLife!==life)return true;
+  combatState.lastHits=combatState.lastHits.filter(h=>gameTime-h.time<1&&h.id!==m.id);
+  combatState.lastHits.push({id:m.id,time:gameTime});
+  if(new Set(combatState.lastHits.map(h=>h.id)).size>=2){combatState.invincibleUntil=gameTime+1;combatState.lastHits=[];updateHealth();}
+  return true;
+}
 function resetEffects() {
   resetMonsters();
   Object.assign(effectState,{type:null,endsAt:0,nextAt:Infinity,armed:false,firstPending:true});
@@ -387,7 +403,7 @@ function updateEffects() {
 }
 function generate() {
   if(photoState.enabled)togglePhotoMode();
-  world.fill(0); clearDrops(); inventory.fill(0); gameTime=0; nextRegenAt=Infinity;
+  world.fill(0); clearDrops(); inventory.fill(0); gameTime=0; nextRegenAt=Infinity;resetCombat();
   resetEffects();
   player.health=10; player.crouched=false;
   const phase=Math.random()*100;
@@ -424,6 +440,7 @@ function respawn() {
 function updateHealth() {
   $('#hearts').innerHTML=Array.from({length:10},(_,i)=>'<span class="heart '+(i<player.health?'full':'empty')+'" aria-hidden="true">♥</span>').join('');
   $('#hearts').setAttribute('aria-label','生命值 '+player.health+' / 10 顆心');
+  $('#hearts').classList.toggle('invincible',gameTime<combatState.invincibleUntil);
 }
 function notify(message) { $('#notice').textContent=message; messageUntil=gameTime+4; }
 function fallDamage(distance) {
@@ -431,6 +448,7 @@ function fallDamage(distance) {
   return blocks<4?0:blocks===4?2:Math.min(10,blocks);
 }
 function die(voidFall=false) {
+  playerLife++;resetCombat();
   const anchor=voidFall?lastSafe:{x:player.x,y:player.y,z:player.z};
   const directions=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
   for(let type=1;type<=8;type++) {
@@ -450,15 +468,17 @@ function die(voidFall=false) {
   respawn(); updateInventory(); updateHealth();
   notify(voidFall?'墜入虛空，已復活；物品散落在最後落腳處附近。':'你已復活，物品散落在死亡位置附近。');
 }
-function damage(amount) {
-  if(amount<=0) return;
+function damage(amount,source='fall') {
+  if(amount<=0||gameTime<combatState.invincibleUntil)return false;
   player.health=Math.max(0,player.health-amount);
   nextRegenAt=gameTime+21.5; damageFlashUntil=gameTime+.3;
   if(player.health===0) die();
-  else { updateHealth(); notify('墜落受傷：−'+amount+' 顆心'); }
+  else { updateHealth(); notify((source==='monster'?'怪物襲擊：−':'墜落受傷：−')+amount+' 顆心'); }
+  return true;
 }
 function updateHealthClock(dt) {
   gameTime+=dt;
+  $('#hearts').classList.toggle('invincible',gameTime<combatState.invincibleUntil);
   while(player.health<10&&gameTime+1e-9>=nextRegenAt) {
     player.health++; nextRegenAt+=1.5; updateHealth();
   }

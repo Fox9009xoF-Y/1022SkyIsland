@@ -148,7 +148,10 @@ flowchart TD
   done -->|否| input
   done -->|是| mine["updateMining dt：中央射線、裂痕、破壞與掉落"]
   mine --> mobs["P19：五隻兩格原木、地面 BFS 路徑追擊、固定速度 4.73"]
-  mobs --> hudNew["P12：更新半透明放置預覽及效果倒數"]
+  mobs --> contact{"P20：距離二格內、每怪一秒、無牆且非無敵？"}
+  contact -->|否| hudNew
+  contact -->|是| hurt["扣一心；第二隻不同怪在一秒內命中後無敵一秒"]
+  hurt --> hudNew["P12：更新半透明放置預覽及效果倒數"]
   hudNew --> drops["updateDrops dt：重力、拾取、更新物品欄及批次繪製"]
   drops --> render["renderer.render scene camera"]
   hide --> render
