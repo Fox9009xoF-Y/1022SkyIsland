@@ -353,3 +353,15 @@ vm.runInContext(`{
  playBlockSound=old;expect(playBlockSound(1,'dig')===false,'N03 no audio API graceful');resetDig();
 }`,context);
 console.log('通過 N03：八種材質音色、三種事件、地面步距、靜止與拒絕放置無聲、無音效 API 相容。');
+
+vm.runInContext(`{
+ expect(skyColorAt(0).getHex()===0xbfe0f4&&skyColorAt(600).getHex()===0xbfe0f4,'N04 initial cycle');
+ expect(skyColorAt(300).getHex()!==skyColorAt(0).getHex()&&skyColorAt(180).getHex()!==skyColorAt(300).getHex(),'N04 day dusk night');
+ const a=skyColorAt(179.999),b=skyColorAt(180.001);expect(Math.abs(a.r-b.r)+Math.abs(a.g-b.g)+Math.abs(a.b-b.b)<.001,'N04 continuous');
+ flat();playing=true;ready=true;resetEffects();gameTime=300;effectState.type='blindness';effectState.endsAt=320;effectState.nextAt=350;updateEffects();expect(scene.background.getHex()===0,'N04 blind priority');
+ gameTime=320;updateEffects();expect(scene.background.getHex()===skyColorAt(320).getHex(),'N04 restore current sky');
+ const snap=captureWorld();generate();restoreWorld(snap);expect(gameTime===320&&scene.background.getHex()===skyColorAt(320).getHex(),'N04 save time');
+ const frozen=scene.background.getHex(),time=gameTime;last=0;frame(100);expect(gameTime===time&&scene.background.getHex()===frozen,'N04 pause sky');
+ generate();expect(scene.background.getHex()===0xbfe0f4,'N04 new day');
+}`,context);
+console.log('通過 N04：600 秒晝夜循環、色彩連續、致盲優先及恢復、保存時間與暫停。');
