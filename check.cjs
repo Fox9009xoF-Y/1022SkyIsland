@@ -340,3 +340,16 @@ vm.runInContext(`{
  failed=false;try{importSavedWorld('x'.repeat(2000001),memory);}catch{failed=true;}expect(failed&&listSavedWorlds(memory).length===2,'N02 oversized reject');
 }`,context);
 console.log('通過 N02：快照深拷貝、完整還原、壞檔原子拒絕、命名改名、備份往返、容量與大小錯誤。');
+
+vm.runInContext(`{
+ const pitches=new Set();for(let type=1;type<=8;type++){const p=soundProfile(type,'dig');expect(p.frequency>0&&p.duration>0&&p.duration<.3,'N03 valid profile');pitches.add(p.frequency);}expect(pitches.size===8,'N03 distinct materials');
+ expect(soundProfile(3,'dig').frequency!==soundProfile(3,'place').frequency&&soundProfile(3,'step').duration<soundProfile(3,'dig').duration,'N03 different actions');
+ const old=playBlockSound,calls=[];playBlockSound=(type,action)=>calls.push({type,action});
+ flat();keys.add('KeyW');for(let i=0;i<120;i++)move(1/120);expect(calls.some(c=>c.type===1&&c.action==='step'),'N03 ground steps');
+ calls.length=0;keys.clear();for(let i=0;i<120;i++)move(1/120);expect(!calls.length,'N03 stationary silent');
+ calls.length=0;inventory[1]=0;select(0);placeBlock({x:17,y:3,z:16,n:{x:0,y:1,z:0},distance:2});expect(!calls.length,'N03 failed place silent');
+ inventory[1]=1;placeBlock({x:17,y:3,z:16,n:{x:0,y:1,z:0},distance:2});expect(calls.some(c=>c.action==='place'&&c.type===1),'N03 success sound');
+ calls.length=0;flat();set(16,4,15,3);rebuild();camera.position.set(16.5,4.5,16.5);camera.rotation.set(0,0,0);held=true;updateMining(.01);expect(calls.some(c=>c.action==='dig'&&c.type===3),'N03 dig sound');
+ playBlockSound=old;expect(playBlockSound(1,'dig')===false,'N03 no audio API graceful');resetDig();
+}`,context);
+console.log('通過 N03：八種材質音色、三種事件、地面步距、靜止與拒絕放置無聲、無音效 API 相容。');
