@@ -148,6 +148,12 @@ for (let type=1;type<=8;type++) {
   mesh.count=0; mesh.frustumCulled=false; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   scene.add(mesh); dropBatches[type]=mesh;
 }
+const placementMaterials=[];
+for(let type=1;type<=8;type++) placementMaterials[type]=faces.map((_,i)=>{
+  const m=materials[tile(type,i)].clone();m.vertexColors=false;m.transparent=true;m.opacity=.32;m.depthWrite=false;installBlindnessFog(m);return m;
+});
+const placementPreview=new THREE.Mesh(new THREE.BoxGeometry(.998,.998,.998),placementMaterials[1]);
+placementPreview.visible=false;scene.add(placementPreview);
 const dummy = new THREE.Object3D();
 function renderDrops() {
   const counts = new Uint32Array(9);
@@ -211,6 +217,7 @@ function resetEffects() {
   effectState.endsAt=0;
   effectState.nextAt=gameTime+30+Math.random()*30;
   applyEffectVision();
+  updateEffectLabel();
 }
 function updateEffects() {
   if(!active()||!ready) return;
@@ -225,6 +232,7 @@ function updateEffects() {
     effectState.nextAt=gameTime+30+Math.random()*30;
   }
   applyEffectVision();
+  updateEffectLabel();
 }
 function generate() {
   world.fill(0); clearDrops(); inventory.fill(0); gameTime=0; nextRegenAt=Infinity;
@@ -376,18 +384,35 @@ for(let i=0;i<9;i++) {
   b.innerHTML='<span class="key-number">'+(i+1)+'</span>'+(i<8?'<img draggable="false" src="'+assets+'icons/'+icons[i+1]+'.png" alt=""><b class="count">0</b>':'<em>空手</em>');
   b.onclick=()=>select(i); $('#hotbar').append(b); slots.push(b);
 }
+function placementCell(t) {
+  if(!t||t.distance>5||selected>=8||!inventory[selected+1]) return null;
+  const x=t.x+t.n.x,y=t.y+t.n.y,z=t.z+t.n.z,h=player.crouched?1.45:1.8;
+  if(!inside(x,y,z)||get(x,y,z)) return null;
+  if(x+1>player.x-.28&&x<player.x+.28&&z+1>player.z-.28&&z<player.z+.28&&y+1>player.y+.00001&&y<player.y+h-.00001) return null;
+  return {x,y,z};
+}
+function updatePlacementPreview(t) {
+  const cell=active()?placementCell(t):null;
+  placementPreview.visible=!!cell;
+  if(cell){placementPreview.position.set(cell.x+.5,cell.y+.5,cell.z+.5);placementPreview.material=placementMaterials[selected+1];}
+}
+function updateEffectLabel() {
+  const labels={blindness:'致盲',speed:'加速',slowness:'減速',jumpBoost:'跳躍提升'};
+  const seconds=Math.max(0,Math.ceil(effectState.endsAt-gameTime));
+  $('#effect-label').textContent=effectState.type&&seconds?labels[effectState.type]+' · '+seconds+' 秒':'';
+}
 function placeBlock(t) {
   if(!t||t.distance>5||selected>=8) return false;
   const type=selected+1;
   if(!inventory[type]) { notify('沒有'+names[type]+'，先挖掘並撿拾方塊。'); return false; }
-  const x=t.x+t.n.x,y=t.y+t.n.y,z=t.z+t.n.z;
-  if(!inside(x,y,z)||get(x,y,z)) return false;
+  const cell=placementCell(t);if(!cell)return false;
+  const {x,y,z}=cell;
   set(x,y,z,type);
   if(collides(player.x,player.y,player.z,player.crouched?1.45:1.8)) { set(x,y,z,0); return false; }
   inventory[type]--; rebuild(); updateInventory(); return true;
 }
 function updateMining(dt) {
-  hit=target(); outline.visible=!!hit; crack.visible=false;
+  hit=target(); updatePlacementPreview(hit); outline.visible=!!hit; crack.visible=false;
   if(!hit) { $('#target').textContent=''; dig=0; digKey=''; return; }
   const type=get(hit.x,hit.y,hit.z), duration=breakTime[type];
   outline.position.set(hit.x+.5,hit.y+.5,hit.z+.5);
@@ -410,7 +435,7 @@ function showLookHint() {
   $('footer p').textContent='WASD 移動 · 左 Ctrl 蹲下 · 左 Shift＋W 奔跑 · 左鍵挖掘 · 右鍵放置'+(locked()?'':' · 相容轉向：移至左右邊緣持續旋轉，移回中央停止');
 }
 function pause() {
-  playing=false; lookPointer=null; resetDig(); keys.clear();
+  playing=false; placementPreview.visible=false; lookPointer=null; resetDig(); keys.clear();
   document.body.classList.remove('playing');
   if(locked()) document.exitPointerLock?.();
   $('#overlay').classList.remove('hidden');
