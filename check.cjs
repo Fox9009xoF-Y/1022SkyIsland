@@ -160,9 +160,9 @@ console.log('通過 G14：20 個內嵌 PNG 與原始素材逐位元組相同');
 // 文件覆蓋與本機入口路徑檢查；僅驗證 Mermaid 圍欄結構，不冒充 Mermaid 語法解析。
 const read=name=>fs.readFileSync(__dirname+'/'+name,'utf8');
 const verify=read('VERIFY.md'),plans=read('PLANS.md'),mermaid=read('MERMAID.md');
-const expected=Array.from({length:37},(_,i)=>'V'+String(i+1).padStart(2,'0'));
+const expected=Array.from({length:50},(_,i)=>'V'+String(i+1).padStart(2,'0'));
 const rows=[...verify.matchAll(/^\| (V\d{2}) \| (P\d{2}) \|/gm)];
-assert.deepEqual(rows.map(m=>m[1]),expected,'VERIFY 必須有完整且不重複的 V01～V37');
+assert.deepEqual(rows.map(m=>m[1]),expected,'VERIFY 必須有完整且不重複的 V01～V50');
 const firstSteps=new Map();
 for(const section of plans.split(/^## (?=P\d{2})/m).slice(1)){
  const step=section.match(/^P\d{2}/)[0];
@@ -176,7 +176,7 @@ assert.equal((mermaid.match(/^```$/gm)||[]).length,8,'Mermaid 圍欄未閉合');
 const html=read('index.html');
 for(const src of [...html.matchAll(/(?:src|href)="([^"#]+)"/g)].map(m=>m[1]))assert(fs.existsSync(__dirname+'/'+src),'入口引用遺失 '+src);
 for(const name of ['AGENTS.md','BRIEF.md','README.md','VERIFICATION.md','vendor/THREE-LICENSE.txt','sky-island-assets/sky-island-assets/README.txt'])assert(fs.existsSync(__dirname+'/'+name),'缺少檔案 '+name);
-console.log('通過：V01～V37 與 P01～P11 一對一對照、入口本機引用、八張 Mermaid 圍欄結構。尚未驗證 Mermaid 渲染。');
+console.log('通過：V01～V50 與 P01～P17 一對一對照、入口本機引用、八張 Mermaid 圍欄結構。尚未驗證 Mermaid 渲染。');
 console.log(`完成 ${checks.length+1} 組功能檢查及文件靜態檢查。此結果不代表瀏覽器畫面、實際輸入、Mermaid 渲染或硬體 FPS 已驗證。`);
 
 // E01 為 BRIEF 新增排程需求的補充測試；不改動既有 G01～G14 或唯讀 VERIFY。
@@ -308,3 +308,17 @@ vm.runInContext(`{
  }finally{Math.random=savedRandom;playing=false;resetEffects();}
 }`,context);
 console.log('通過 E04：黑色背景、三格徑向漸層 shader、全部場景材質、到期/新局恢復、暫停與 frame；WebGL 畫面仍待實機。');
+
+vm.runInContext(`{
+ flat();playing=true;ready=true;select(0);inventory[1]=2;
+ const t={x:17,y:3,z:16,n:{x:0,y:1,z:0},distance:3};
+ const before=world.slice();updatePlacementPreview(t);
+ expect(placementPreview.visible&&placementPreview.position.x===17.5&&placementPreview.position.y===4.5,'N01 preview adjacent');
+ expect(world.every((n,i)=>n===before[i])&&inventory[1]===2,'N01 preview no mutation');
+ expect(placementPreview.material.every(m=>m.transparent&&m.opacity>0&&m.opacity<1&&!m.depthWrite),'N01 translucent materials');
+ for(const bad of [null,{...t,distance:5.01},{x:16,y:3,z:16,n:{x:0,y:1,z:0},distance:1},{x:31,y:4,z:16,n:{x:1,y:0,z:0},distance:2}]){updatePlacementPreview(bad);expect(!placementPreview.visible,'N01 invalid hidden');}
+ inventory[1]=0;updatePlacementPreview(t);expect(!placementPreview.visible,'N01 empty hidden');inventory[1]=2;select(8);updatePlacementPreview(t);expect(!placementPreview.visible,'N01 hand hidden');select(0);
+ for(const [kind,label] of [['blindness','致盲'],['speed','加速'],['slowness','減速'],['jumpBoost','跳躍提升']]){effectState.type=kind;effectState.endsAt=20;gameTime=19.1;updateEffectLabel();expect($('#effect-label').textContent===label+' · 1 秒','N01 effect label');}
+ gameTime=20;updateEffectLabel();expect($('#effect-label').textContent==='','N01 expired label');updatePlacementPreview(t);pause();expect(!placementPreview.visible,'N01 pause preview');resetEffects();
+}`,context);
+console.log('通過 N01：半透明放置預覽、不改資料、拒絕條件、四種效果名稱倒數及暫停。');

@@ -127,7 +127,8 @@ flowchart TD
   cam --> done{"六個子步完成？"}
   done -->|否| input
   done -->|是| mine["updateMining dt：中央射線、裂痕、破壞與掉落"]
-  mine --> drops["updateDrops dt：重力、拾取、更新物品欄及批次繪製"]
+  mine --> hudNew["P12：更新半透明放置預覽及效果倒數"]
+  hudNew --> drops["updateDrops dt：重力、拾取、更新物品欄及批次繪製"]
   drops --> render["renderer.render scene camera"]
   hide --> render
   render --> tick
@@ -287,3 +288,8 @@ updateEffects/resetEffects 同步 applyEffectVision，切換共用 blindnessUnif
 
 
 E04 最新結果：紅燈提交 57cbfb1 後完成 shader/狀態整合，G01～G14/E01～E04 全部通過，未再修改紅燈測試。八張主架構圖均保留；目前程式流程為排程→視野切換→水平倍率/起跳初速→原物理與互動。恢復/新世界流程都回復正常霧與倍率；視覺結果仍需實機驗收。
+
+
+## 新需求 P12～P17 對照（逐步實作）
+
+P12 放置預覽/效果倒數；P13 ESC 命名存檔、完整驗證、改名、匯出/匯入；P14 合成材質音效；P15 晝夜；P16 獨立拍照相機/飛行；P17 O 擷取，使用者授權 photosave 或下載 PNG。新增驗收 V38～V50，原主流程圖後續隨實作更新，文件規劃存在不表示已實作。
