@@ -382,6 +382,14 @@ vm.runInContext(`{
 }`,context);
 console.log('通過 N05：獨立拍照鏡頭、上下飛行、凍結世界、雙空白防 repeat、快速落地與退出還原。');
 
+vm.runInContext(`{
+ flat();resetEffects();const base=captureWorld(),extra=JSON.parse(JSON.stringify(base));
+ extra.player.extra='unexpected';Object.defineProperty(extra.player,'__proto__',{value:{unexpected:true},enumerable:true});extra.effect.extra=1;
+ const clean=validateWorld(extra);expect(!Object.prototype.hasOwnProperty.call(clean.player,'extra')&&!Object.prototype.hasOwnProperty.call(clean.player,'__proto__')&&!Object.prototype.hasOwnProperty.call(clean.effect,'extra'),'N07 whitelist snapshot fields');
+ const blocked=JSON.parse(JSON.stringify(base));blocked.blocks[at(16,4,16)]=3;const before=JSON.stringify(captureWorld());let failed=false;try{restoreWorld(blocked);}catch{failed=true;}expect(failed&&JSON.stringify(captureWorld())===before,'N07 reject body inside blocks');
+}`,context);
+console.log('通過 N07：存檔白名單欄位與實心方塊內出生拒絕，失敗不局部套用。');
+
 const photoChecks=vm.runInContext(`(async()=>{
  flat();playing=true;ready=true;
  expect(await capturePhoto()===false,'N06 mode guard');togglePhotoMode();
