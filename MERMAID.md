@@ -19,6 +19,10 @@ flowchart TB
   source["sky-island-assets/sky-island-assets：原素材與授權"] --> data
   source --> icons["icons：八個快捷欄圖示"]
   icons --> html
+  game --> saves["P13：capture/validate/restore、localStorage 命名清單與 JSON 備份"]
+  saves --> validSave{"完整驗證成功？"}
+  validSave -->|是| restore["先 pause，再套狀態與重建地形/HUD"]
+  validSave -->|否| intact["拒絕且保留現有世界"]
   game --> world["world / generate / rebuild：固定方塊世界"]
   game --> control["keys / trackLook / updateLook / pause：輸入與狀態"]
   game --> physics["player / collides / move / updateCamera：物理"]

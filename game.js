@@ -212,6 +212,63 @@ function collides(x,y,z,h) {
       for(let c=Math.floor(z-.28);c<=Math.floor(z+.28);c++) if(get(a,b,c)) return true;
   return false;
 }
+const SAVE_KEY='sky-island-worlds-v1';
+let saveSequence=0;
+function captureWorld() {
+  return {schema:'sky-island',version:1,size:N,blocks:Array.from(world),bag:Array.from(inventory),
+    player:{...player},view:{yaw,pitch},time:gameTime,regenAt:Number.isFinite(nextRegenAt)?nextRegenAt:null,
+    effect:{...effectState},drops:drops.map(d=>({...d})),lastSafe:{...lastSafe},selected};
+}
+function validateWorld(data) {
+  const finite=(n,min,max)=>Number.isFinite(n)&&n>=min&&n<=max;
+  const integer=(n,min,max)=>Number.isInteger(n)&&finite(n,min,max);
+  const point=p=>p&&finite(p.x,-128,128)&&finite(p.y,-16,128)&&finite(p.z,-128,128);
+  if(!data||data.schema!=='sky-island'||data.version!==1||data.size!==N)throw Error('不支援的世界格式或版本');
+  if(!Array.isArray(data.blocks)||data.blocks.length!==N*N*N||!data.blocks.every(n=>integer(n,0,8)))throw Error('方塊資料不正確');
+  if(!Array.isArray(data.bag)||data.bag.length!==9||!data.bag.every(n=>integer(n,0,1000000000)))throw Error('物品欄資料不正確');
+  if(!point(data.player)||!integer(data.player.health,1,10)||!finite(data.player.vy,-10000,10000)||!finite(data.player.peakY,-16,128)||typeof data.player.ground!=='boolean'||typeof data.player.crouched!=='boolean')throw Error('玩家資料不正確');
+  if(!data.view||!finite(data.view.yaw,-Math.PI,Math.PI)||!finite(data.view.pitch,-1.55,1.55)||!finite(data.time,0,1e9)||!integer(data.selected,0,8)||!point(data.lastSafe))throw Error('視角或時間不正確');
+  if(data.regenAt!==null&&!finite(data.regenAt,0,1e9))throw Error('回血時間不正確');
+  if(!data.effect||!(data.effect.type===null||effectKinds.includes(data.effect.type))||!finite(data.effect.endsAt,0,1e9)||!finite(data.effect.nextAt,0,1e9))throw Error('效果資料不正確');
+  if(!Array.isArray(data.drops)||data.drops.length>32768||!data.drops.every(d=>point(d)&&integer(d.type,1,8)&&integer(d.count,1,1e9)&&finite(d.vy,-10000,10000)&&finite(d.phase,0,100)&&finite(d.pickupAt,0,1e9)))throw Error('掉落物資料不正確');
+  return JSON.parse(JSON.stringify(data));
+}
+function restoreWorld(input) {
+  const data=validateWorld(input); // 驗證完成前不碰現有世界。
+  pause();world.set(data.blocks);inventory.set(data.bag);Object.assign(player,data.player);
+  yaw=data.view.yaw;pitch=data.view.pitch;gameTime=data.time;nextRegenAt=data.regenAt===null?Infinity:data.regenAt;
+  Object.assign(effectState,data.effect);lastSafe={...data.lastSafe};selected=data.selected;
+  clearDrops();data.drops.forEach(d=>drops.push({...d}));renderDrops();rebuild();resetDig();
+  damageFlashUntil=0;messageUntil=0;$('#notice').textContent='';applyEffectVision();updateEffectLabel();updateInventory();updateHealth();updateCamera();
+}
+function storageFor(store){return store||window.localStorage;}
+function listSavedWorlds(store) {
+  const raw=storageFor(store).getItem(SAVE_KEY);if(raw===null)return [];
+  if(raw.length>15000000)throw Error('保存資料過大');
+  const list=JSON.parse(raw);
+  if(!Array.isArray(list)||list.length>20||!list.every(e=>e&&typeof e.id==='string'&&typeof e.name==='string'&&e.name.length<=48&&e.data))throw Error('保存清單損壞');
+  return list;
+}
+function cleanSaveName(name){if(typeof name!=='string'||!name.trim()||name.trim().length>48)throw Error('世界名稱請填寫 1～48 字');return name.trim();}
+function storeEntry(name,data,store) {
+  const list=listSavedWorlds(store);if(list.length>=20)throw Error('最多保存 20 個世界，請先匯出備份');
+  const id='world-'+Date.now().toString(36)+'-'+(++saveSequence);
+  list.push({id,name:cleanSaveName(name),savedAt:Date.now(),data:validateWorld(data)});
+  storageFor(store).setItem(SAVE_KEY,JSON.stringify(list));return id;
+}
+function saveWorld(name,store){return storeEntry(name,captureWorld(),store);}
+function savedEntry(id,store){const entry=listSavedWorlds(store).find(e=>e.id===id);if(!entry)throw Error('請先選擇保存的世界');return entry;}
+function loadSavedWorld(id,store){restoreWorld(savedEntry(id,store).data);}
+function renameSavedWorld(id,name,store){const list=listSavedWorlds(store),entry=list.find(e=>e.id===id);if(!entry)throw Error('找不到存檔');entry.name=cleanSaveName(name);storageFor(store).setItem(SAVE_KEY,JSON.stringify(list));}
+function exportSavedWorld(id,store){const e=savedEntry(id,store);return JSON.stringify({format:'sky-island-backup',version:1,name:e.name,data:validateWorld(e.data)});}
+function importSavedWorld(text,store){if(typeof text!=='string'||text.length>2000000)throw Error('備份檔超過 2 MB');const b=JSON.parse(text);if(b.format!=='sky-island-backup'||b.version!==1)throw Error('不支援的備份');return storeEntry(b.name,b.data,store);}
+function downloadBlob(blob,filename){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function refreshSaveList(selectedId) {
+  const select=$('#save-list');select.innerHTML='';
+  for(const entry of listSavedWorlds()){const option=document.createElement('option');option.value=entry.id;option.textContent=entry.name;select.append(option);}
+  if(selectedId)select.value=selectedId;
+}
+function saveAction(action){try{action();$('#save-status').textContent='完成';}catch(e){$('#save-status').textContent='未完成：'+e.message;}}
 function resetEffects() {
   effectState.type=null;
   effectState.endsAt=0;
@@ -439,6 +496,7 @@ function pause() {
   document.body.classList.remove('playing');
   if(locked()) document.exitPointerLock?.();
   $('#overlay').classList.remove('hidden');
+  try{refreshSaveList();}catch(e){$('#save-status').textContent='無法讀取本機存檔：'+e.message;}
 }
 $('#play').onclick=()=>{
   if(!ready) return;
@@ -501,6 +559,13 @@ $('#fullscreen').onclick=async()=>{
   try { if(document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
   catch { $('#fullscreen').textContent='請使用瀏覽器 F11'; }
 };
+$('#save-world').onclick=()=>saveAction(()=>{const id=saveWorld($('#world-name').value);refreshSaveList(id);});
+$('#load-world').onclick=()=>saveAction(()=>loadSavedWorld($('#save-list').value));
+$('#rename-world').onclick=()=>saveAction(()=>{const id=$('#save-list').value;renameSavedWorld(id,$('#world-name').value);refreshSaveList(id);});
+$('#export-world').onclick=()=>saveAction(()=>downloadBlob(new Blob([exportSavedWorld($('#save-list').value)],{type:'application/json'}),'sky-island-backup.json'));
+$('#import-world').onclick=()=>$('#import-file').click();
+$('#import-file').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{if(file.size>2000000)throw Error('備份檔超過 2 MB');const id=importSavedWorld(await file.text());refreshSaveList(id);$('#save-status').textContent='匯入完成，請按載入世界';}catch(err){$('#save-status').textContent='未完成：'+err.message;}finally{e.target.value='';}};
+$('#save-list').onchange=()=>saveAction(()=>{$('#world-name').value=savedEntry($('#save-list').value).name;});
 $('#quality').onclick=()=>{
   quality=!quality; resolutionScale=1; resize(); $('#quality').textContent='畫質：'+(quality?'清晰':'省電');
 };

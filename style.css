@@ -11,3 +11,5 @@
 @media(max-height:650px){section{padding:18px}h1{margin:10px 0;font-size:34px}.controls{gap:12px;margin:10px 0}section>small{margin-top:10px}.primary{margin:8px 0}section p{margin:8px 0}}
 
 #effect-label{position:absolute;left:0;top:53%;width:100%;text-align:center;color:#f5d796;font-size:14px;pointer-events:none;text-shadow:0 2px 4px #122}#target{top:59%}
+
+.saves{margin-top:15px;border-top:1px solid #ffffff25;padding-top:12px;text-align:left;font-size:12px}.saves input:not([hidden]),.saves select{width:100%;margin:6px 0;padding:8px;background:#24433b;color:#fff;border:1px solid #ffffff40;border-radius:4px;font:inherit}.save-actions{display:flex;gap:5px;margin:5px 0}.save-actions button{font-size:11px;padding:8px;flex:1}#save-status{min-height:18px;color:#ebcb8a;font-size:11px}#overlay section{max-height:94vh;overflow:auto}
