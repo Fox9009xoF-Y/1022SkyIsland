@@ -111,7 +111,8 @@ flowchart TD
   effectStart --> six["六次 move dt/6 子步"]
   effectKeep --> six
   six --> input["讀 keys，決定蹲姿、步行或奔跑速度"]
-  input --> horizontal["依 yaw 移動，檢查碰撞與蹲姿邊緣保護"]
+  input --> multiplier["E02：speed 乘 1.5、slowness 乘 0.5、其餘乘 1；不改基礎速度"]
+  multiplier --> horizontal["依 yaw 移動，檢查碰撞與蹲姿邊緣保護"]
   horizontal --> vertical["地面起跳、重力、小段垂直位移與碰撞"]
   vertical --> land{"落地或墜入虛空？"}
   land -->|落地| damage["更新 lastSafe、按 peakY 落差計算 damage"]
@@ -259,3 +260,8 @@ P01～P11 是依賴順序；旁邊的「每步修改完成」子流程適用於�
 本輪先完成排程狀態：effectState 包含 type、endsAt、nextAt，generate 呼叫 resetEffects；frame 在 updateHealthClock 後、move 前呼叫 updateEffects。上方第 4 圖納入到期與觸發分支。進入新世界重抽首次 30～60 秒，依遊戲時間計算且暫停不前進；不變更實際移動、跳躍及霧效果。
 
 未完成：E02 加速/減速倍率、E03 跳躍多三格、E04 三格內漸層與三格外全黑。這些都必須各自先紅燈提交、實作、全套前段重驗，再綠燈提交，完成一步就停止。架構文件同步不代表獲得修改 VERIFY.md 的授權。
+
+
+### E02 水平速度作用（TDD 本輪）
+
+排程維持 E01，move 在每個物理子步先選基礎速度，再依 effectState.type 套當次倍率；不直接覆寫永久速度。效果到期由 updateEffects 清除種類，因此下一個 move 自動回基礎速度。所有步行/蹲行/奔跑/方向都使用同一路徑，斜行正規化保持不變。跳躍速度與視野尚未接入 E03/E04；本步不宣稱四種效果都已完成。

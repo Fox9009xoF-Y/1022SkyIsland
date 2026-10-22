@@ -216,3 +216,32 @@ vm.runInContext(`{
  } finally {Math.random=savedRandom;playing=false;}
 }`,context);
 console.log('通過 E01：30～60 秒排程、20 秒狀態、四種抽選、無重複/堆疊、暫停與新世界重設；實際效果作用尚未實作。');
+
+// E02 以實際位移驗收倍率；不修改既有 G 與 E01 測試。
+vm.runInContext(`{
+ function distanceFor(type,inputs){
+  flat();effectState.type=type;effectState.endsAt=20;effectState.nextAt=Infinity;
+  for(const key of inputs)keys.add(key);
+  const x=player.x,z=player.z;move(.1);return Math.hypot(player.x-x,player.z-z);
+ }
+ for(const inputs of [['KeyW'],['KeyW','ControlLeft'],['KeyW','ShiftLeft'],['KeyD'],['KeyW','KeyD']]){
+  const normal=distanceFor(null,inputs),fast=distanceFor('speed',inputs),slow=distanceFor('slowness',inputs);
+  expect(Math.abs(fast/normal-1.5)<1e-9,'E02 speed ratio '+inputs.join('+'));
+  expect(Math.abs(slow/normal-.5)<1e-9,'E02 slow ratio '+inputs.join('+'));
+  expect(Math.abs(distanceFor('blindness',inputs)/normal-1)<1e-9,'E02 blindness no speed change');
+  expect(Math.abs(distanceFor('jumpBoost',inputs)/normal-1)<1e-9,'E02 jump kind no speed change');
+ }
+ flat();effectState.type='speed';effectState.endsAt=20;effectState.nextAt=60;keys.add('KeyW');
+ const start=player.z;for(let i=0;i<120;i++)move(1/120);expect(Math.abs(start-player.z-6.45)<1e-9,'E02 no cumulative multiplier');
+ flat();playing=true;ready=true;effectState.type='speed';effectState.endsAt=20;effectState.nextAt=60;keys.add('KeyW');
+ gameTime=19.999;updateEffects();const before=player.z;move(.1);expect(Math.abs(before-player.z-.645)<1e-9,'E02 before expiry');
+ gameTime=20;updateEffects();const expired=player.z;move(.1);expect(Math.abs(expired-player.z-.43)<1e-9,'E02 expiry restores base');
+ const savedRandom=Math.random;
+ try{
+  Math.random=()=>0;generate();expect(effectState.type===null,'E02 generation clears modifier');
+  flat();gameTime=0;resetEffects();Math.random=()=>.25;gameTime=29.95;playing=true;ready=true;keys.add('KeyW');last=0;
+  const origin=player.z;frame(100);expect(effectState.type==='speed'&&Math.abs(origin-player.z-.645)<1e-9,'E02 scheduled frame movement');
+  pause();const paused=player.z;frame(200);expect(player.z===paused,'E02 pause no motion');
+ }finally{Math.random=savedRandom;playing=false;resetEffects();}
+}`,context);
+console.log('通過 E02：步行/蹲行/奔跑/橫移/斜移倍率、無累乘、到期與新世界還原、排程 frame 與暫停。');
